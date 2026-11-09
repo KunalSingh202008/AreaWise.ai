@@ -19,7 +19,21 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+
+function getPort(): number {
+  const portArgIndex = process.argv.indexOf('--port');
+  if (portArgIndex !== -1 && process.argv[portArgIndex + 1]) {
+    const parsed = parseInt(process.argv[portArgIndex + 1], 10);
+    if (!isNaN(parsed)) return parsed;
+  }
+  // In development, dev server must always bind to port 3000
+  if (process.env.NODE_ENV !== 'production') {
+    return 3000;
+  }
+  return process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+}
+
+const PORT = getPort();
 
 app.use(express.json({ limit: '10mb' }));
 
