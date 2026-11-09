@@ -1,0 +1,1004 @@
+# AREA WISE AI — COMPLETE PRODUCT TRANSFORMATION & ENGINEERING PROMPT
+
+Act as a senior product architect, full-stack engineer, geospatial data engineer, AI/ML engineer, UI/UX designer, and startup product strategist.
+
+Your task is to transform my existing **AreaWise AI** application into a production-oriented, intelligent, multilingual, voice-enabled locality intelligence platform for India.
+
+This is NOT a request to create another generic AI dashboard.
+
+The existing application has several problems:
+- Its AI responses are weak, generic, and not sufficiently useful.
+- Locality-specific intelligence does not work reliably across Varanasi.
+- Selecting an area does not consistently return information about that exact selected area.
+- The dashboard looks boring and visually ordinary.
+- The UI/UX looks like a common AI-generated template.
+- The application lacks a strong product identity.
+- The experience needs multilingual and voice-based AI assistance.
+
+You must independently inspect the complete existing project and discover additional problems before making changes.
+
+Do not blindly rebuild the project. Preserve working functionality and improve the existing architecture wherever reasonable.
+
+---
+
+# 1. PRODUCT VISION
+
+Product name: AreaWise AI
+
+Tagline: Know the Area Before You Own the Address.
+
+AreaWise AI is an intelligent locality research and neighborhood decision-support platform.
+
+It helps people understand a specific geographical area before:
+- Buying a house.
+- Renting a property.
+- Moving to another locality.
+- Selecting accommodation near a college or workplace.
+- Investing in real estate.
+- Choosing an area for their family.
+- Understanding local infrastructure and amenities.
+
+A user should be able to select ANY supported locality in Varanasi and receive a detailed, evidence-backed report specifically about that locality.
+
+The system must not depend on a few hardcoded demonstration areas.
+
+Initial geographic focus: Varanasi, Uttar Pradesh, India.
+
+Architecture must be extensible to other Indian cities.
+
+# 2. FIRST TASK: COMPLETE PROJECT AUDIT
+
+Before modifying anything:
+
+1. Inspect the entire repository.
+2. Identify the framework, architecture, components, routes, backend, database and dependencies.
+3. Inspect all existing pages and user journeys.
+4. Test every navigation item, button, search field, filter, chart and dashboard interaction.
+5. Identify fake data, hardcoded locations, static scores and placeholder AI responses.
+6. Check whether locality selection is connected to the actual data retrieval pipeline.
+7. Check whether the AI receives the selected locality's real context.
+8. Inspect API integration, error handling, loading states and data persistence.
+9. Inspect mobile responsiveness and accessibility.
+10. Check authentication and authorization if implemented.
+11. Identify missing environment variables and unavailable integrations.
+12. Check performance, security and code quality.
+
+Create an audit checklist with:
+- Existing functionality.
+- Working features.
+- Broken features.
+- Missing features.
+- Mock or hardcoded features.
+- Security concerns.
+- Architectural problems.
+- Recommended changes.
+
+Do not stop after producing the audit. Proceed to implementation in logical phases.
+
+# 3. MOST IMPORTANT: REAL LOCALITY INTELLIGENCE
+
+This is the core product requirement.
+
+A user must be able to select ANY supported area in Varanasi.
+
+Examples:
+- Sigra
+- Lanka
+- Mahmoorganj
+- Bhelupur
+- Assi
+- Durgakund
+- Shivpur
+- Pandeypur
+- Sarnath
+- Orderly Bazaar
+- Cantonment
+- BHU surroundings
+- Rajendra Vihar
+- Other recognized localities and user-selected map locations.
+
+These examples must NOT be the only supported locations.
+
+The system should support:
+- Locality name search.
+- Landmark search.
+- PIN code search where supported.
+- Map-based area selection.
+- Custom geographical area selection.
+- Search by nearby landmark.
+- Search within a defined radius.
+
+## Locality resolution engine
+
+Build a robust geographical resolution system.
+
+When a user selects an area:
+
+1. Resolve its actual geographical location.
+2. Retrieve its coordinates and available administrative or locality boundary.
+3. Generate a stable locality ID.
+4. Store the selected location and boundary.
+5. Determine the requested search radius or polygon.
+6. Retrieve relevant geographical records.
+7. Filter and rank results according to distance and spatial containment.
+8. Prevent unrelated neighbouring areas from being presented as facts about the selected area.
+9. Clearly distinguish inside-the-locality results from nearby facilities.
+10. Pass the resolved locality context to the dashboard and AI assistant.
+
+The selected locality must remain consistent throughout the entire session.
+
+Do not silently switch the locality when the user navigates between dashboard, map, reports and AI assistant.
+
+If exact official locality boundaries are unavailable, explain the boundary method used and let the user adjust the selected area.
+
+## Geographic accuracy
+
+Every geographical record should include, where available:
+- Latitude.
+- Longitude.
+- Locality ID.
+- Distance from the selected location.
+- Source.
+- Collection date.
+- Verification status.
+- Geographic precision.
+- Confidence level.
+
+Use geospatial database queries instead of relying on simple string matching.
+
+Use PostgreSQL with PostGIS if the current architecture supports it or can reasonably be migrated.
+
+# 4. COMPLETE LOCALITY INTELLIGENCE MODULES
+
+Every selected locality should have its own research dashboard.
+
+## A. Connectivity Intelligence
+- Main roads.
+- Road accessibility.
+- Public transport availability.
+- Bus stations.
+- Railway stations.
+- Metro connectivity, only where actually available.
+- Airport accessibility.
+- Nearby transport facilities.
+- Distance to important landmarks.
+- Commute estimates where reliable routing data exists.
+
+Do not invent travel times.
+
+## B. Healthcare Intelligence
+- Hospitals.
+- Clinics.
+- Pharmacies.
+- Diagnostic laboratories.
+- Emergency healthcare facilities.
+- Distance and approximate accessibility.
+
+Do not claim that a hospital is medically superior based only on its existence or distance.
+
+## C. Education Intelligence
+- Schools.
+- Colleges.
+- Universities.
+- Coaching centres.
+- Libraries.
+- Educational institutions.
+
+## D. Environment Intelligence
+- Air Quality Index where monitoring data is available.
+- Historical air-quality observations.
+- Green spaces.
+- Parks.
+- Water bodies.
+- Flood exposure where credible geographical information exists.
+- Weather and rainfall context.
+- Noise information only when credible data exists.
+
+Always display the measurement date and source.
+
+## E. Civic Infrastructure Intelligence
+- Road conditions where verified.
+- Drainage and sewage information.
+- Water supply reports.
+- Garbage collection reports.
+- Street lighting reports.
+- Electricity information where credible.
+- Public infrastructure observations.
+
+Separate official information from resident-submitted reports.
+
+## F. Daily Lifestyle Intelligence
+- Grocery stores.
+- Markets.
+- Restaurants.
+- Cafes.
+- Parks.
+- Gyms.
+- Banks.
+- ATMs.
+- Petrol pumps.
+- Pharmacies.
+- Essential services.
+
+## G. Property Market Intelligence
+- Rental asking-price ranges where reliable data exists.
+- Property asking prices.
+- Available authorized property information.
+- Historical trends only when sufficient historical data exists.
+
+Never represent asking prices as verified transaction prices.
+
+Never fabricate property prices.
+
+## H. Resident Intelligence
+Allow residents to report:
+- Water shortages.
+- Garbage problems.
+- Damaged roads.
+- Drainage issues.
+- Streetlight problems.
+- Noise issues.
+- Public infrastructure problems.
+
+Each report should have:
+- Category.
+- Description.
+- Approximate location.
+- Submission date.
+- Optional image.
+- Verification status.
+- Moderation status.
+- Resolution status.
+
+Protect the privacy of contributors.
+
+# 5. REBUILD THE AI INTELLIGENCE ENGINE
+
+The existing AI is not good enough.
+
+Do not solve this problem simply by changing the system prompt or making the chatbot more conversational.
+
+Improve its actual information retrieval and reasoning pipeline.
+
+## AreaWise AI Assistant
+
+The assistant must understand the selected locality, user preferences and conversation history.
+
+Example:
+
+User selects: Sigra, Varanasi.
+
+User asks:
+"Is this a good locality for a family?"
+
+The AI should explain:
+- Available schools.
+- Healthcare accessibility.
+- Parks and daily amenities.
+- Connectivity.
+- Environmental observations.
+- Known civic concerns.
+- Missing or outdated information.
+- Relevant sources.
+
+If the user changes the selection to Lanka, the AI must retrieve Lanka-specific information.
+
+It must not continue answering using Sigra's information.
+
+## Retrieval-augmented generation (RAG)
+
+Implement an evidence-grounded architecture:
+
+User question
+→ Resolve selected locality
+→ Retrieve locality-specific records
+→ Retrieve relevant source metadata
+→ Apply geographical filters
+→ Rank evidence
+→ Build grounded AI context
+→ Generate response
+→ Attach citations
+→ Return answer.
+
+Use structured database records as the primary source of truth.
+
+Use vector search only where useful, for example searching through reports, documents and community observations.
+
+The AI must never invent:
+- AQI.
+- Property prices.
+- Crime statistics.
+- Infrastructure quality.
+- Hospital quality.
+- School rankings.
+- Commute times.
+- Resident complaints.
+- Locality scores.
+
+If information is unavailable, say so.
+
+If information is old, show its age.
+
+If evidence is contradictory, explain the contradiction.
+
+## Conversational abilities
+
+Support questions such as:
+- Is this area suitable for a family?
+- What hospitals are nearby?
+- How good is the connectivity?
+- Are there parks nearby?
+- What are the known infrastructure concerns?
+- Compare this locality with another area.
+- What is missing from the available information?
+- What should I verify before renting here?
+- Which facilities are within 2 km?
+- Summarize this locality in simple Hindi.
+
+AI must give structured, useful answers instead of generic paragraphs.
+
+Provide:
+- Short answer.
+- Important findings.
+- Supporting evidence.
+- Data freshness.
+- Confidence and limitations.
+- Suggested next steps.
+
+# 6. MULTILINGUAL EXPERIENCE
+
+Make AreaWise AI multilingual throughout the entire application.
+
+Initial languages:
+1. English.
+2. Hindi.
+3. Hinglish.
+
+Design the architecture so that additional Indian languages can be added later, including Bengali, Tamil, Telugu, Marathi and Gujarati.
+
+Language switching must affect:
+- Navigation.
+- Dashboard labels.
+- Buttons.
+- Search experience.
+- AI responses.
+- Reports.
+- Notifications.
+- Voice assistant.
+- Form validation messages.
+- Error messages.
+
+Do not translate only the homepage.
+
+Persist the user's selected language in their profile or preferences.
+
+Allow the user to change language at any time.
+
+## Hinglish support
+
+Understand natural messages such as:
+
+"Sigra mein family ke liye rehna sahi rahega?"
+
+"Lanka ke aas paas best hospitals kaun se hain?"
+
+"Mahmoorganj aur Sigra compare karo."
+
+The AI should respond naturally in the selected language.
+
+Preserve proper names, location names and source titles where appropriate.
+
+Do not use awkward literal translations.
+
+# 7. VOICE-BASED AI ASSISTANT
+
+Build a polished voice assistant directly into the product.
+
+It should feel like a real interactive locality research assistant.
+
+## Voice features
+
+1. Microphone button in the AI assistant.
+2. Speech-to-text.
+3. Hindi speech recognition.
+4. English speech recognition.
+5. Hinglish input support where the selected speech engine supports it.
+6. AI-generated spoken response.
+7. Text and voice responses synchronized.
+8. Stop speaking button.
+9. Replay response.
+10. Mute/unmute.
+11. Listening indicator.
+12. Processing indicator.
+13. Speaking animation.
+14. Permission-denied handling.
+15. Network and service failure handling.
+16. Keyboard input fallback.
+
+Use appropriate browser speech APIs or reliable speech providers.
+
+Evaluate browser SpeechRecognition/Web Speech API support and use a configurable provider adapter when a dedicated speech provider is required.
+
+Use text-to-speech voices appropriate to the chosen language.
+
+Do not promise offline voice functionality unless it is actually implemented.
+
+## Voice interaction example
+
+User opens AreaWise AI and selects Lanka.
+
+The assistant says:
+
+"Namaste! Aapne Lanka, Varanasi select kiya hai. Aap is area ke baare mein kya jaanna chahenge?"
+
+User says:
+
+"Yahan students ke liye rehna kaisa rahega?"
+
+AI researches the selected locality and responds in the chosen language.
+
+The assistant should be able to continue a conversation naturally.
+
+Do not start listening automatically without user consent.
+
+# 8. DASHBOARD: PREMIUM VISUAL TRANSFORMATION
+
+The dashboard must stop looking like a basic admin template.
+
+Design a premium, modern, immersive locality intelligence experience.
+
+Visual direction:
+
+- Premium glassmorphism.
+- Frosted-glass panels.
+- Subtle transparency.
+- Layered depth.
+- Soft ambient gradients.
+- Dark navy and charcoal foundations.
+- Emerald, cyan and restrained violet accents.
+- Sophisticated typography.
+- High-quality iconography.
+- Generous spacing.
+- Beautiful map integration.
+- Carefully designed charts.
+- Smooth micro-interactions.
+
+The design should feel like a combination of:
+- Premium PropTech platform.
+- Modern analytics product.
+- High-quality AI workspace.
+- Interactive geographical intelligence system.
+
+Do not blindly copy another website.
+
+Build an original visual identity for AreaWise AI.
+
+## Dashboard layout
+
+### Top navigation
+- AreaWise AI logo.
+- Locality search.
+- Selected locality indicator.
+- Language selector.
+- Notifications.
+- User profile.
+- Theme switch.
+
+### Main locality hero
+Show:
+- Selected locality name.
+- City and state.
+- Locality map preview.
+- Last updated date.
+- Data availability indicator.
+- Quick AI research button.
+- Compare locality button.
+
+### AreaScore section
+Display:
+- Overall AreaScore, only when evidence coverage permits.
+- Animated score visualization.
+- Category breakdown.
+- Data coverage.
+- Data confidence.
+- Freshness.
+- Scoring methodology link.
+
+Never show invented scores.
+
+### Intelligence cards
+Create visually distinct interactive cards for:
+- Connectivity.
+- Healthcare.
+- Education.
+- Environment.
+- Civic infrastructure.
+- Daily amenities.
+- Property information.
+
+Each card should display real available data and clearly identify missing information.
+
+### Interactive map
+Build a beautiful map experience.
+
+Map should support:
+- Locality boundary.
+- Selected point.
+- Nearby amenities.
+- Hospitals.
+- Schools.
+- Transport.
+- Parks.
+- Markets.
+- Community reports.
+- Distance filters.
+- Layer controls.
+- Map/list switching.
+
+Clicking a map marker should open a detailed information panel.
+
+### Insights section
+Display:
+- Positive findings.
+- Potential concerns.
+- Recent community reports.
+- Nearby facilities.
+- Data limitations.
+- Recommended verification steps.
+
+### AI research panel
+A persistent but unobtrusive assistant entry point.
+
+Allow the user to open a full conversational research workspace.
+
+# 9. MOTION AND INTERACTION DESIGN
+
+Use Framer Motion or the appropriate animation library in the existing stack.
+
+Implement:
+- Smooth page transitions.
+- Staggered card entrances.
+- Animated score counters.
+- Progress ring animations.
+- Glass-panel hover effects.
+- Map marker transitions.
+- Animated navigation indicator.
+- Expand/collapse transitions.
+- Smooth modal opening.
+- Search suggestions.
+- Loading skeletons.
+- Voice assistant waveform.
+- AI thinking indicator.
+- Subtle background motion.
+
+Use motion purposefully.
+
+Do not make the interface visually noisy.
+
+Respect prefers-reduced-motion.
+
+Maintain high performance on average laptops and mobile devices.
+
+# 10. LOCALITY COMPARISON
+
+Users must be able to compare two or more selected localities.
+
+Example:
+Sigra vs Mahmoorganj vs Lanka.
+
+Compare:
+- Connectivity.
+- Healthcare.
+- Education.
+- Environment.
+- Civic infrastructure.
+- Daily amenities.
+- Property information.
+- Data coverage.
+- Data confidence.
+
+Show:
+- Side-by-side comparison.
+- Interactive charts.
+- Map comparison.
+- Key differences.
+- Advantages and limitations.
+- Missing information.
+
+AI should explain the differences using retrieved evidence.
+
+Do not automatically declare one area better for everyone.
+
+Allow personalized decision profiles:
+- Family.
+- Student.
+- Working professional.
+- Commuter.
+- Investor.
+
+Clearly label these as preference-weighted decision profiles.
+
+# 11. AREASCORE AND DATA QUALITY
+
+Implement scoring in backend code, not in the LLM.
+
+Initial configurable weights:
+
+- Connectivity: 20%.
+- Healthcare: 10%.
+- Education: 10%.
+- Environment: 20%.
+- Civic infrastructure: 20%.
+- Daily amenities: 10%.
+- Property market transparency: 10%.
+
+These weights are initial product assumptions, not scientifically validated universal ratings.
+
+Category scores must use documented, reproducible methodologies.
+
+If data is unavailable:
+- Do not assign a fabricated zero.
+- Do not assume the locality is poor.
+- Exclude unavailable indicators.
+- Transparently renormalize available weights.
+- Display missing data.
+- Display data coverage.
+
+If evidence coverage is insufficient, do not publish an overall AreaScore.
+
+Show three separate concepts:
+
+1. AreaScore: the calculated locality indicator.
+2. Data Coverage: how much expected information is available.
+3. Data Confidence: how trustworthy and geographically relevant the available evidence is.
+
+Also show data freshness.
+
+Every score must be traceable to underlying indicators and a methodology version.
+
+# 12. REAL DATA INTEGRATIONS
+
+Design modular data-source adapters.
+
+Evaluate:
+- OpenStreetMap.
+- Overpass API.
+- OpenStreetMap-compatible geocoding.
+- OpenStreetMap-compatible routing.
+- CPCB air-quality resources.
+- OpenAQ where appropriate.
+- data.gov.in.
+- Bhuvan/NRSC resources.
+- IMD weather and rainfall resources.
+- Municipal and public authority datasets.
+- Authorized property data providers.
+- Verified resident submissions.
+
+Before integration, verify:
+- API availability.
+- Licensing.
+- Attribution requirements.
+- Rate limits.
+- Authentication.
+- Cost.
+- Data coverage.
+
+Use caching and scheduled refreshes where appropriate.
+
+Never scrape websites in violation of their terms.
+
+Create a source adapter architecture so new sources can be added without rewriting the application.
+
+If a data provider is unavailable, show an honest unavailable state.
+
+Provide CSV import and administrative data management as fallback capabilities.
+
+Never populate real-looking demo information as though it were verified.
+
+# 13. DATABASE AND BACKEND
+
+Review the existing backend first.
+
+Use a maintainable architecture.
+
+Preferred technologies where suitable:
+- Frontend: Next.js/React and TypeScript.
+- UI: Tailwind CSS.
+- Motion: Framer Motion.
+- Backend: Python FastAPI.
+- Database: PostgreSQL.
+- Geospatial: PostGIS.
+- Analytics: Pandas and NumPy.
+- Charts: Plotly or a suitable interactive chart library.
+- Maps: MapLibre with an appropriate tile provider.
+- AI: configurable LLM provider.
+- RAG: structured retrieval plus optional vector database.
+- Authentication: secure authentication provider or existing secure implementation.
+
+Do not force a technology migration if the existing project has a sound working architecture.
+
+Suggested data entities:
+- users.
+- user_preferences.
+- cities.
+- localities.
+- locality_boundaries.
+- locations.
+- facilities.
+- data_sources.
+- source_records.
+- area_indicators.
+- area_scores.
+- data_quality.
+- community_reports.
+- report_evidence.
+- report_verifications.
+- comparisons.
+- saved_areas.
+- ai_conversations.
+- ai_messages.
+- ai_citations.
+- generated_reports.
+- audit_logs.
+
+Store source, geographic reference, collection date, measurement period, confidence and verification metadata.
+
+Implement validation, indexes, spatial indexes, migrations and proper relationships.
+
+# 14. SECURITY, TRUST AND PRIVACY
+
+Implement:
+- Secure authentication.
+- Role-based authorization.
+- Input validation.
+- API rate limiting.
+- Safe file uploads.
+- Secure secret management.
+- Environment variables.
+- Audit logs.
+- Data deletion and correction workflows.
+- Privacy controls for resident reports.
+- Photo metadata minimization.
+- Protection against prompt injection in retrieved content.
+
+Never reveal residents' exact home addresses publicly.
+
+Do not present unverified resident claims as official information.
+
+Do not make unsupported claims about crime, personal safety, medical quality or structural safety.
+
+# 15. COMPLETE APPLICATION PAGES
+
+Review and improve all existing pages, and implement missing ones:
+
+1. Landing page.
+2. Signup and login.
+3. User profile and preferences.
+4. Locality discovery.
+5. Search results.
+6. Locality dashboard.
+7. Interactive map explorer.
+8. Intelligence categories.
+9. Locality comparison.
+10. AI research assistant.
+11. Voice assistant interface.
+12. Community reporting.
+13. Saved localities.
+14. Generated reports.
+15. Admin dashboard.
+16. Data source management.
+17. User and moderation management.
+18. Methodology and transparency page.
+19. Settings and language preferences.
+20. Error and empty states.
+
+Every button and interaction must work.
+
+Do not leave decorative buttons that pretend to perform an action.
+
+# 16. REPORT GENERATION
+
+Allow users to generate a locality intelligence report.
+
+Report must include:
+- Selected locality and geographic scope.
+- Map.
+- AreaScore, if eligible.
+- Category breakdown.
+- Data coverage.
+- Data confidence.
+- Facilities.
+- Connectivity.
+- Environment information.
+- Civic observations.
+- Property information where available.
+- Positive findings.
+- Potential concerns.
+- Missing information.
+- Source citations.
+- Last-updated dates.
+- Methodology version.
+- Limitations.
+
+Allow PDF generation and sharing.
+
+# 17. ADMIN AND DATA OPERATIONS
+
+Build an admin interface to:
+- Manage localities.
+- Inspect geographic boundaries.
+- Manage data sources.
+- Import datasets.
+- Validate records.
+- Detect duplicates.
+- Refresh data.
+- Moderate resident reports.
+- Verify submissions.
+- Manage scoring configuration.
+- Monitor API errors.
+- Monitor stale data.
+- Inspect AI citations.
+- Review audit logs.
+
+# 18. PERFORMANCE AND RESPONSIVENESS
+
+The product must work on:
+- Desktop.
+- Laptop.
+- Tablet.
+- Mobile.
+
+Implement:
+- Responsive layouts.
+- Lazy loading.
+- Efficient map rendering.
+- API caching.
+- Database query optimization.
+- Pagination.
+- Debounced search.
+- Loading skeletons.
+- Error boundaries.
+- Graceful provider failures.
+
+Do not let animation compromise usability.
+
+# 19. TESTING AND ACCEPTANCE CRITERIA
+
+Do not declare the product complete just because it looks good.
+
+Run actual tests.
+
+Critical acceptance tests:
+
+TEST 1 — LOCALITY SELECTION
+
+Select Sigra.
+
+Verify the dashboard and AI receive Sigra's resolved geographic context.
+
+Select Lanka.
+
+Verify the entire context changes to Lanka.
+
+The previous locality's records must not leak into the new locality's results.
+
+TEST 2 — VARANASI-WIDE SEARCH
+
+Test multiple recognized localities across Varanasi.
+
+Search for localities beyond the initial demonstration examples.
+
+Verify that the search is not restricted to a hardcoded list.
+
+Allow map selection when an exact locality name is not available.
+
+TEST 3 — GEOGRAPHIC ACCURACY
+
+Verify that nearby facilities are classified using actual coordinates and distance.
+
+Ensure neighbouring localities are not incorrectly represented as facilities inside the selected locality.
+
+TEST 4 — AI GROUNDING
+
+Ask the assistant about hospitals, education and connectivity.
+
+Verify that responses cite retrieved evidence.
+
+Test unavailable information.
+
+The AI must explicitly acknowledge missing data.
+
+TEST 5 — MULTILINGUAL
+
+Test the interface in English, Hindi and Hinglish.
+
+Verify that the entire experience changes language.
+
+Test mixed Hindi-English questions.
+
+TEST 6 — VOICE
+
+Test microphone permission, voice input, speech recognition, spoken responses, replay and stop.
+
+Verify graceful fallback when speech services are unavailable.
+
+TEST 7 — DASHBOARD
+
+Test cards, filters, charts, map markers, navigation, comparison and responsive layouts.
+
+TEST 8 — SCORING
+
+Verify calculations independently.
+
+Verify missing data handling, confidence, coverage and score eligibility.
+
+TEST 9 — REPORTS
+
+Generate and inspect a PDF.
+
+Verify source information, locality and date.
+
+TEST 10 — SECURITY
+
+Test authorization, validation, unsafe uploads and protection of private contributor information.
+
+# 20. IMPLEMENTATION STRATEGY
+
+Work in controlled phases.
+
+PHASE 1: Full project audit and architectural fixes.
+
+PHASE 2: Locality search, geographic resolution and Varanasi-wide locality support.
+
+PHASE 3: Data-source integration and locality-specific retrieval.
+
+PHASE 4: AI assistant reconstruction with grounded RAG.
+
+PHASE 5: Multilingual UI and conversational intelligence.
+
+PHASE 6: Voice input and spoken AI responses.
+
+PHASE 7: Complete dashboard redesign with premium glassmorphism and motion.
+
+PHASE 8: Locality comparison, reports and community features.
+
+PHASE 9: Admin dashboard, security and data quality.
+
+PHASE 10: Testing, optimization and deployment readiness.
+
+At the end of every phase:
+- Explain what was implemented.
+- List files changed.
+- List working features.
+- List remaining work.
+- Report failed tests.
+- Explain required API credentials.
+- Explain how to run and verify the application.
+
+Maintain README, .env.example, migrations and setup documentation.
+
+Never overwrite the entire project unnecessarily.
+
+Never silently replace real integrations with mock data.
+
+If a feature depends on unavailable credentials, build its adapter and clearly show its configuration requirement.
+
+# FINAL PRODUCT STANDARD
+
+AreaWise AI should feel like a serious, premium Indian technology startup.
+
+It should be visually memorable, geographically accurate, multilingual, conversational and genuinely useful.
+
+The most important principle:
+
+**When a user selects a locality, AreaWise AI must understand THAT locality, retrieve THAT locality's information, and answer questions using evidence relevant to THAT locality.**
+
+A beautiful dashboard without accurate data is not success.
+
+A chatbot without locality intelligence is not success.
+
+A map without meaningful geographical analysis is not success.
+
+Build a complete, testable product where the design, data, AI and user experience work together.
+
+Start with the full audit, then implement the improvements without waiting for another prompt.

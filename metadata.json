@@ -1,0 +1,6 @@
+{
+  "name": "AreaWise AI",
+  "description": "Know the Area Before You Own the Address. Independent neighborhood intelligence, geospatial analytics, and decision-support platform for Indian localities.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
