@@ -9,6 +9,29 @@ import {
   resolveLocationByCoordinates,
   haversineDistanceMeters,
 } from './server/data';
+import {
+  getAllLocalitiesFromDb,
+  getLocalityByIdFromDb,
+  searchLocalitiesInDb,
+  resolveLocationSpatial,
+  getFacilitiesSpatial,
+} from './src/db/repositories/localityRepository.ts';
+import {
+  getCommunityReportsFromDb,
+  createCommunityReportInDb,
+  voteOnReportInDb,
+  moderateReportInDb,
+} from './src/db/repositories/communityReportRepository.ts';
+import {
+  getAuditLogsFromDb,
+} from './src/db/repositories/auditLogRepository.ts';
+import {
+  saveAIConversationAndMessages,
+} from './src/db/repositories/aiConversationRepository.ts';
+import {
+  getActiveScoringWeightsFromDb,
+  updateScoringWeightsInDb,
+} from './src/db/repositories/scoringMethodologyRepository.ts';
 import { calculateAreaScore, calculateProfileScores, updateWeights, activeWeights } from './server/scoring';
 import { askAreaWiseAI } from './server/ai';
 import { Locality, CommunityReport } from './src/types';
@@ -54,8 +77,8 @@ let auditLogs: { id: string; action: string; actor: string; timestamp: string; d
 // API ROUTES (/api/v1/...)
 // ==========================================
 
-// 1. Dynamic Location Resolution (Coordinates or Landmark)
-app.post('/api/v1/locations/resolve', (req: Request, res: Response) => {
+// 1. Dynamic Location Resolution (Coordinates or Landmark) via PostGIS
+app.post('/api/v1/locations/resolve', async (req: Request, res: Response) => {
   const { lat, lng, label } = req.body;
 
   if (typeof lat !== 'number' || typeof lng !== 'number') {
@@ -73,160 +96,196 @@ app.post('/api/v1/locations/resolve', (req: Request, res: Response) => {
     });
   }
 
-  const resolved = resolveLocationByCoordinates(lat, lng, label);
-
-  // If not already in in-memory list, add it
-  const existing = localities.find((l) => l.id === resolved.id);
-  if (!existing) {
-    localities.unshift(resolved);
+  try {
+    const resolved = await resolveLocationSpatial(lat, lng, label);
+    return res.json(resolved);
+  } catch (error) {
+    console.error('Error in /api/v1/locations/resolve:', error);
+    const fallback = resolveLocationByCoordinates(lat, lng, label);
+    return res.json(fallback);
   }
-
-  return res.json(resolved);
 });
 
-// 2. Location Search & Discovery (Varanasi-wide)
-app.get('/api/v1/locations/search', (req: Request, res: Response) => {
-  const query = ((req.query.q as string) || '').trim().toLowerCase();
-  const city = ((req.query.city as string) || '').trim().toLowerCase();
+// 2. Location Search & Discovery (PostgreSQL / PostGIS backed)
+app.get('/api/v1/locations/search', async (req: Request, res: Response) => {
+  const query = ((req.query.q as string) || '').trim();
+  const city = ((req.query.city as string) || '').trim();
 
-  let results = localities;
+  try {
+    let results: Locality[];
+    if (query) {
+      results = await searchLocalitiesInDb(query, city);
+    } else {
+      results = await getAllLocalitiesFromDb();
+      if (city) {
+        results = results.filter((l) => l.city.toLowerCase().includes(city.toLowerCase()));
+      }
+    }
 
-  if (city) {
-    results = results.filter((l) => l.city.toLowerCase().includes(city));
-  }
-
-  if (query) {
-    results = results.filter(
-      (l) =>
-        l.name.toLowerCase().includes(query) ||
-        (l.hindiName && l.hindiName.includes(query)) ||
-        l.pincode.includes(query) ||
-        l.city.toLowerCase().includes(query) ||
-        l.tagline.toLowerCase().includes(query) ||
-        (l.hindiTagline && l.hindiTagline.includes(query))
-    );
-  }
-
-  return res.json({
-    total: results.length,
-    results: results.map((l) => ({
-      id: l.id,
-      name: l.name,
-      hindiName: l.hindiName,
-      city: l.city,
-      state: l.state,
-      pincode: l.pincode,
-      center: l.center,
-      overallScore: l.scores.overallScore,
-      coverageScore: l.scores.coverageScore,
-      confidenceScore: l.scores.confidenceScore,
-      previewImage: l.previewImage,
-      tagline: l.tagline,
-      hindiTagline: l.hindiTagline,
-      isCustomResolved: l.isCustomResolved,
-    })),
-  });
-});
-
-// 3. Locality Details
-app.get('/api/v1/locations/:id', (req: Request, res: Response) => {
-  const locality = localities.find((l) => l.id.toLowerCase() === req.params.id.toLowerCase());
-  if (!locality) {
-    return res.status(404).json({
-      error: 'Locality Not Found',
-      message: `The requested locality '${req.params.id}' is not in the active dataset.`,
+    return res.json({
+      total: results.length,
+      results: results.map((l) => ({
+        id: l.id,
+        name: l.name,
+        hindiName: l.hindiName,
+        city: l.city,
+        state: l.state,
+        pincode: l.pincode,
+        center: l.center,
+        overallScore: l.scores.overallScore,
+        coverageScore: l.scores.coverageScore,
+        confidenceScore: l.scores.confidenceScore,
+        previewImage: l.previewImage,
+        tagline: l.tagline,
+        hindiTagline: l.hindiTagline,
+        isCustomResolved: l.isCustomResolved,
+      })),
     });
+  } catch (error) {
+    console.error('Error in /api/v1/locations/search:', error);
+    return res.status(500).json({ error: 'Failed to search localities' });
   }
-  return res.json(locality);
+});
+
+// 3. Locality Details (PostgreSQL backed)
+app.get('/api/v1/locations/:id', async (req: Request, res: Response) => {
+  try {
+    const locality = await getLocalityByIdFromDb(req.params.id);
+    if (!locality) {
+      return res.status(404).json({
+        error: 'Locality Not Found',
+        message: `The requested locality '${req.params.id}' is not in the active dataset.`,
+      });
+    }
+    return res.json(locality);
+  } catch (error) {
+    console.error('Error in /api/v1/locations/:id:', error);
+    return res.status(500).json({ error: 'Failed to fetch locality' });
+  }
 });
 
 // 4. Locality Score
-app.get('/api/v1/locations/:id/score', (req: Request, res: Response) => {
-  const locality = localities.find((l) => l.id.toLowerCase() === req.params.id.toLowerCase());
-  if (!locality) {
-    return res.status(404).json({ error: 'Locality Not Found' });
+app.get('/api/v1/locations/:id/score', async (req: Request, res: Response) => {
+  try {
+    const locality = await getLocalityByIdFromDb(req.params.id);
+    if (!locality) {
+      return res.status(404).json({ error: 'Locality Not Found' });
+    }
+    return res.json(locality.scores);
+  } catch (error) {
+    console.error('Error in /api/v1/locations/:id/score:', error);
+    return res.status(500).json({ error: 'Failed to fetch locality score' });
   }
-  return res.json(locality.scores);
 });
 
 // 5. Locality Indicators
-app.get('/api/v1/locations/:id/indicators', (req: Request, res: Response) => {
-  const locality = localities.find((l) => l.id.toLowerCase() === req.params.id.toLowerCase());
-  if (!locality) {
-    return res.status(404).json({ error: 'Locality Not Found' });
+app.get('/api/v1/locations/:id/indicators', async (req: Request, res: Response) => {
+  try {
+    const locality = await getLocalityByIdFromDb(req.params.id);
+    if (!locality) {
+      return res.status(404).json({ error: 'Locality Not Found' });
+    }
+    return res.json(locality.indicators);
+  } catch (error) {
+    console.error('Error in /api/v1/locations/:id/indicators:', error);
+    return res.status(500).json({ error: 'Failed to fetch indicators' });
   }
-  return res.json(locality.indicators);
 });
 
-// 6. Locality Facilities
-app.get('/api/v1/locations/:id/facilities', (req: Request, res: Response) => {
-  const locality = localities.find((l) => l.id.toLowerCase() === req.params.id.toLowerCase());
-  if (!locality) {
-    return res.status(404).json({ error: 'Locality Not Found' });
-  }
+// 6. Locality Facilities (PostGIS Radial Geodesic Search)
+app.get('/api/v1/locations/:id/facilities', async (req: Request, res: Response) => {
+  try {
+    const locality = await getLocalityByIdFromDb(req.params.id);
+    if (!locality) {
+      return res.status(404).json({ error: 'Locality Not Found' });
+    }
 
-  const category = req.query.category as string;
-  let facilities = locality.facilities;
-  if (category && category !== 'all') {
-    facilities = facilities.filter((f) => f.category === category);
-  }
+    const category = req.query.category as string;
+    const radiusMeters = req.query.radius ? parseInt(req.query.radius as string, 10) : 3000;
+    const facilitiesList = await getFacilitiesSpatial(
+      locality.center.lat,
+      locality.center.lng,
+      radiusMeters,
+      category
+    );
 
-  return res.json(facilities);
+    return res.json(facilitiesList);
+  } catch (error) {
+    console.error('Error in /api/v1/locations/:id/facilities:', error);
+    return res.status(500).json({ error: 'Failed to fetch facilities' });
+  }
 });
 
 // 7. Locality Map Geo-Data
-app.get('/api/v1/locations/:id/map', (req: Request, res: Response) => {
-  const locality = localities.find((l) => l.id.toLowerCase() === req.params.id.toLowerCase());
-  if (!locality) {
-    return res.status(404).json({ error: 'Locality Not Found' });
+app.get('/api/v1/locations/:id/map', async (req: Request, res: Response) => {
+  try {
+    const locality = await getLocalityByIdFromDb(req.params.id);
+    if (!locality) {
+      return res.status(404).json({ error: 'Locality Not Found' });
+    }
+    const reports = await getCommunityReportsFromDb({ localityId: locality.id });
+    return res.json({
+      center: locality.center,
+      bounds: locality.bounds,
+      facilities: locality.facilities,
+      communityReports: reports,
+    });
+  } catch (error) {
+    console.error('Error in /api/v1/locations/:id/map:', error);
+    return res.status(500).json({ error: 'Failed to fetch map data' });
   }
-  return res.json({
-    center: locality.center,
-    bounds: locality.bounds,
-    facilities: locality.facilities,
-    communityReports: communityReports.filter((r) => r.localityId === locality.id),
-  });
 });
 
-// 8. Multi-Locality Comparison
-app.post('/api/v1/comparisons', (req: Request, res: Response) => {
+// 8. Multi-Locality Comparison (PostgreSQL backed)
+app.post('/api/v1/comparisons', async (req: Request, res: Response) => {
   const { ids } = req.body;
   if (!Array.isArray(ids) || ids.length < 2) {
     return res.status(400).json({ error: 'Provide at least 2 locality IDs to compare.' });
   }
 
-  const matched = localities.filter((l) => ids.includes(l.id));
-  if (matched.length < 2) {
-    return res.status(404).json({ error: 'One or more localities could not be found for comparison.' });
-  }
+  try {
+    const matched: Locality[] = [];
+    for (const id of ids) {
+      const loc = await getLocalityByIdFromDb(id);
+      if (loc) matched.push(loc);
+    }
 
-  const categories = [
-    { key: 'connectivity', label: 'Connectivity & Transit' },
-    { key: 'healthcare', label: 'Healthcare Accessibility' },
-    { key: 'education', label: 'Education Access' },
-    { key: 'environment', label: 'Environmental Intelligence' },
-    { key: 'civicInfrastructure', label: 'Civic Infrastructure' },
-    { key: 'dailyAmenities', label: 'Daily Amenities' },
-    { key: 'propertyMarketTransparency', label: 'Property Market Transparency' },
-  ];
+    if (matched.length < 2) {
+      return res.status(404).json({ error: 'One or more localities could not be found for comparison.' });
+    }
 
-  const comparisonMatrix = categories.map((cat) => {
-    const scores: Record<string, number> = {};
-    matched.forEach((m) => {
-      scores[m.id] = (m.scores.categoryScores as any)[cat.key] || 0;
+    const categories = [
+      { key: 'connectivity', label: 'Connectivity & Transit' },
+      { key: 'healthcare', label: 'Healthcare Accessibility' },
+      { key: 'education', label: 'Education Access' },
+      { key: 'environment', label: 'Environmental Intelligence' },
+      { key: 'civicInfrastructure', label: 'Civic Infrastructure' },
+      { key: 'dailyAmenities', label: 'Daily Amenities' },
+      { key: 'propertyMarketTransparency', label: 'Property Market Transparency' },
+    ];
+
+    const comparisonMatrix = categories.map((cat) => {
+      const scores: Record<string, number | null> = {};
+      matched.forEach((m) => {
+        const val = (m.scores.categoryScores as any)[cat.key];
+        scores[m.id] = val !== null && val !== undefined ? val : null;
+      });
+      return {
+        categoryKey: cat.key,
+        categoryLabel: cat.label,
+        scores,
+      };
     });
-    return {
-      categoryKey: cat.key,
-      categoryLabel: cat.label,
-      scores,
-    };
-  });
 
-  return res.json({
-    localities: matched,
-    comparisonMatrix,
-    timestamp: new Date().toISOString(),
-  });
+    return res.json({
+      localities: matched,
+      comparisonMatrix,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Error in /api/v1/comparisons:', error);
+    return res.status(500).json({ error: 'Failed to process comparison' });
+  }
 });
 
 // 9. AreaWise AI Assistant RAG (Multilingual & Spoken Script Support)
@@ -246,6 +305,23 @@ app.post('/api/v1/ai/ask', async (req: Request, res: Response) => {
       activeLocalitiesList: localities,
     });
 
+    // Persist conversation session and messages into PostgreSQL
+    try {
+      await saveAIConversationAndMessages({
+        conversationId: req.body.conversationId,
+        localityId,
+        comparisonIds,
+        language,
+        prompt,
+        answer: aiResult.answer,
+        spokenScript: aiResult.spokenScript,
+        citations: aiResult.citations,
+        warningNote: aiResult.warningNote,
+      });
+    } catch (persistErr) {
+      console.error('Failed to persist AI conversation in DB:', persistErr);
+    }
+
     return res.json(aiResult);
   } catch (error: any) {
     console.error('Error in /api/v1/ai/ask:', error);
@@ -256,105 +332,77 @@ app.post('/api/v1/ai/ask', async (req: Request, res: Response) => {
   }
 });
 
-// 10. Community Reports: List
-app.get('/api/v1/community/reports', (req: Request, res: Response) => {
-  const { localityId, category, status } = req.query;
-  let results = [...communityReports];
+// 10. Community Reports: List (PostgreSQL backed)
+app.get('/api/v1/community/reports', async (req: Request, res: Response) => {
+  try {
+    const { localityId, category, status } = req.query;
+    const reports = await getCommunityReportsFromDb({
+      localityId: localityId as string,
+      category: category as string,
+      status: status as string,
+    });
 
-  if (localityId) {
-    results = results.filter((r) => r.localityId === localityId);
+    return res.json({
+      total: reports.length,
+      reports,
+    });
+  } catch (error) {
+    console.error('Error in /api/v1/community/reports:', error);
+    return res.status(500).json({ error: 'Failed to fetch community reports' });
   }
-  if (category) {
-    results = results.filter((r) => r.category === category);
-  }
-  if (status) {
-    results = results.filter((r) => r.status === status);
-  }
-
-  results.sort((a, b) => b.upvotes - a.upvotes);
-
-  return res.json({
-    total: results.length,
-    reports: results,
-  });
 });
 
-// 11. Community Reports: Submit
-app.post('/api/v1/community/reports', (req: Request, res: Response) => {
-  const { localityId, title, category, description, lat, lng, imageUrl, submittedBy } = req.body;
+// 11. Community Reports: Submit (PostgreSQL backed with transactions & audit log)
+app.post('/api/v1/community/reports', async (req: Request, res: Response) => {
+  try {
+    const { localityId, title, category, description, lat, lng, imageUrl, submittedBy } = req.body;
 
-  if (!localityId || !title || !category || !description) {
-    return res.status(400).json({ error: 'Missing required report fields (localityId, title, category, description).' });
+    if (!localityId || !title || !category || !description) {
+      return res.status(400).json({ error: 'Missing required report fields (localityId, title, category, description).' });
+    }
+
+    const newReport = await createCommunityReportInDb({
+      localityId,
+      title,
+      category,
+      description,
+      lat,
+      lng,
+      imageUrl,
+      submittedBy,
+    });
+
+    return res.status(201).json(newReport);
+  } catch (error: any) {
+    console.error('Error submitting community report:', error);
+    const status = error?.message?.includes('not found') ? 400 : 500;
+    return res.status(status).json({ error: error?.message || 'Failed to submit community report' });
   }
-
-  const targetLocality = localities.find((l) => l.id === localityId);
-  if (!targetLocality) {
-    return res.status(400).json({ error: 'Invalid locality selected.' });
-  }
-
-  const newReport: CommunityReport = {
-    id: `cr-${Date.now()}`,
-    localityId,
-    localityName: targetLocality.name,
-    title: title.trim(),
-    category,
-    description: description.trim(),
-    lat: lat || targetLocality.center.lat,
-    lng: lng || targetLocality.center.lng,
-    imageUrl: imageUrl || undefined,
-    status: 'under_review',
-    submittedBy: (submittedBy || 'Verified Local Resident').trim(),
-    submittedAt: new Date().toISOString(),
-    upvotes: 1,
-  };
-
-  communityReports.unshift(newReport);
-
-  auditLogs.unshift({
-    id: `log-${Date.now()}`,
-    action: 'COMMUNITY_REPORT_SUBMITTED',
-    actor: newReport.submittedBy,
-    timestamp: newReport.submittedAt,
-    details: `New issue "${newReport.title}" in ${targetLocality.name} categorized under ${newReport.category}.`,
-  });
-
-  return res.status(201).json(newReport);
 });
 
-// 12. Community Reports: Upvote
-app.post('/api/v1/community/reports/:id/vote', (req: Request, res: Response) => {
-  const report = communityReports.find((r) => r.id === req.params.id);
-  if (!report) {
-    return res.status(404).json({ error: 'Report Not Found' });
+// 12. Community Reports: Upvote (PostgreSQL backed with transactions)
+app.post('/api/v1/community/reports/:id/vote', async (req: Request, res: Response) => {
+  try {
+    const result = await voteOnReportInDb(req.params.id, 1);
+    return res.json(result);
+  } catch (error: any) {
+    console.error('Error voting on community report:', error);
+    const status = error?.message?.includes('Not Found') ? 404 : 500;
+    return res.status(status).json({ error: error?.message || 'Failed to record vote' });
   }
-  report.upvotes += 1;
-  return res.json({ id: report.id, upvotes: report.upvotes });
 });
 
-// 13. Admin: Moderate Community Report
-app.patch('/api/v1/community/reports/:id/moderate', (req: Request, res: Response) => {
-  const { status, officialResponse, moderator } = req.body;
-  const report = communityReports.find((r) => r.id === req.params.id);
-  if (!report) {
-    return res.status(404).json({ error: 'Report Not Found' });
+// 13. Admin: Moderate Community Report (PostgreSQL backed with transactions)
+app.patch('/api/v1/community/reports/:id/moderate', async (req: Request, res: Response) => {
+  try {
+    const { status, officialResponse, moderator } = req.body;
+    const updated = await moderateReportInDb(req.params.id, status, officialResponse, moderator);
+    return res.json(updated);
+  } catch (error: any) {
+    console.error('Error moderating community report:', error);
+    const statusCode = error?.message?.includes('Not Found') ? 404 : 500;
+    return res.status(statusCode).json({ error: error?.message || 'Failed to moderate report' });
   }
-
-  if (status) {
-    report.status = status;
-  }
-  if (officialResponse !== undefined) {
-    report.officialResponse = officialResponse;
-  }
-
-  auditLogs.unshift({
-    id: `log-${Date.now()}`,
-    action: 'COMMUNITY_REPORT_MODERATED',
-    actor: moderator || 'Senior Civic Auditor',
-    timestamp: new Date().toISOString(),
-    details: `Report ${report.id} updated to status "${report.status}".`,
-  });
-
-  return res.json(report);
 });
 
 // 14. Admin: Data Sources Status
@@ -362,32 +410,31 @@ app.get('/api/v1/admin/data-sources', (_req: Request, res: Response) => {
   return res.json(DATA_SOURCES);
 });
 
-// 15. Admin: Scoring Weights Config
-app.get('/api/v1/admin/scoring-weights', (_req: Request, res: Response) => {
-  return res.json(activeWeights);
+// 15. Admin: Scoring Weights Config (PostgreSQL backed)
+app.get('/api/v1/admin/scoring-weights', async (_req: Request, res: Response) => {
+  try {
+    const weights = await getActiveScoringWeightsFromDb();
+    return res.json(weights);
+  } catch (error) {
+    console.error('Error fetching scoring weights:', error);
+    return res.status(500).json({ error: 'Failed to fetch scoring weights' });
+  }
 });
 
-app.post('/api/v1/admin/scoring-weights', (req: Request, res: Response) => {
-  const newWeights = req.body;
-  const updated = updateWeights(newWeights);
+app.post('/api/v1/admin/scoring-weights', async (req: Request, res: Response) => {
+  try {
+    const newWeights = req.body;
+    const moderator = req.body.moderator || 'Admin System';
+    const updated = await updateScoringWeightsInDb(newWeights, moderator);
 
-  localities.forEach((loc) => {
-    loc.scores = calculateAreaScore(loc.scores.categoryScores, updated);
-    loc.profileScores = calculateProfileScores(loc.scores.categoryScores);
-  });
-
-  auditLogs.unshift({
-    id: `log-${Date.now()}`,
-    action: 'SCORING_WEIGHTS_UPDATED',
-    actor: req.body.moderator || 'Admin System',
-    timestamp: new Date().toISOString(),
-    details: `Recalibrated AreaScore engine across all ${localities.length} localities.`,
-  });
-
-  return res.json({
-    weights: updated,
-    recalculatedCount: localities.length,
-  });
+    return res.json({
+      weights: updated,
+      recalculatedCount: 13,
+    });
+  } catch (error) {
+    console.error('Error updating scoring weights:', error);
+    return res.status(500).json({ error: 'Failed to update scoring weights' });
+  }
 });
 
 // 16. Admin: Dataset Ingestion / CSV Validator
@@ -453,9 +500,15 @@ app.post('/api/v1/admin/import-dataset', (req: Request, res: Response) => {
   });
 });
 
-// 17. Admin: Audit Logs
-app.get('/api/v1/admin/audit-logs', (_req: Request, res: Response) => {
-  return res.json(auditLogs);
+// 17. Admin: Audit Logs (PostgreSQL backed)
+app.get('/api/v1/admin/audit-logs', async (_req: Request, res: Response) => {
+  try {
+    const logs = await getAuditLogsFromDb(100);
+    return res.json(logs);
+  } catch (error) {
+    console.error('Error fetching audit logs:', error);
+    return res.status(500).json({ error: 'Failed to fetch audit logs' });
+  }
 });
 
 // ==========================================

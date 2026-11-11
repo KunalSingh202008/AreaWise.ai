@@ -253,14 +253,14 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
             </div>
 
             {/* Large Score Metric with Animated Feel */}
-            {locality.scores.isEligibleForOverallScore ? (
+            {locality.scores.isEligibleForOverallScore && displayedScore !== null ? (
               <div className="flex items-baseline gap-3 mb-2">
                 <span className="text-6xl font-black text-slate-900 dark:text-white font-mono tracking-tight">
                   {displayedScore}
                 </span>
                 <span className="text-xl text-slate-400 font-bold">/ 100</span>
                 <span className="ml-auto px-3 py-1 text-xs font-bold rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                  {displayedScore && displayedScore >= 80 ? 'Grade A (High)' : 'Grade B (Fair)'}
+                  {displayedScore >= 80 ? 'Grade A (High)' : 'Grade B (Fair)'}
                 </span>
               </div>
             ) : (
@@ -268,7 +268,7 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
                 <div className="font-bold flex items-center gap-1.5 mb-1">
                   <AlertTriangle className="w-4 h-4" /> Score Withheld
                 </div>
-                Evidence coverage is below the mandatory 40% threshold. AreaWise strictly avoids generating deceptive composite scores for unobserved areas.
+                Evidence coverage ({locality.scores.coverageScore}%) is below the mandatory 50% threshold. AreaWise strictly avoids generating deceptive composite scores for unobserved areas.
               </div>
             )}
 
@@ -283,7 +283,7 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
                   className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 transition-colors"
                 >
                   <TrendingUp className="w-3.5 h-3.5" />
-                  <span>View Historical Price & Infrastructure Growth Module ↓</span>
+                  <span>View Property Market Transparency & Scenario Simulator ↓</span>
                 </a>
               </div>
             )}
@@ -324,21 +324,29 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
               <div className="text-3xl font-black text-slate-900 dark:text-white font-mono">
                 {locality.scores.coverageScore}%
               </div>
-              <div className="text-[11px] text-slate-400 mt-1">22 of 24 indicators recorded</div>
+              <div className="text-[11px] text-slate-400 mt-1">
+                {Math.round((locality.scores.coverageScore / 100) * 24)} of 24 core indicators observed
+              </div>
             </div>
 
             <div className="p-4 rounded-2xl bg-white dark:bg-slate-900/80 backdrop-blur-xl border border-slate-200 dark:border-slate-800 shadow-xs">
               <div className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">{t.dashboard.confidence}</div>
               <div className="text-3xl font-black text-slate-900 dark:text-white font-mono">
-                {locality.scores.confidenceScore}%
+                {locality.scores.confidenceScore !== null ? `${locality.scores.confidenceScore}%` : 'Unrated'}
               </div>
-              <div className="text-[11px] text-slate-400 mt-1">Statutory CPCB & SCADA tier</div>
+              <div className="text-[11px] text-slate-400 mt-1">
+                {locality.scores.confidenceScore !== null ? 'Statutory CPCB & SCADA tier' : 'No source verification'}
+              </div>
             </div>
 
             <div className="p-4 rounded-2xl bg-white dark:bg-slate-900/80 backdrop-blur-xl border border-slate-200 dark:border-slate-800 shadow-xs">
               <div className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">{t.dashboard.freshness}</div>
               <div className="text-3xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
-                {locality.scores.dataFreshnessDays} {language === 'hi' ? 'दिन' : 'days'}
+                {locality.scores.dataFreshnessDays !== null ? (
+                  `${locality.scores.dataFreshnessDays} ${language === 'hi' ? 'दिन' : 'days'}`
+                ) : (
+                  <span className="text-base text-slate-400 font-sans">Pending Data</span>
+                )}
               </div>
               <div className="text-[11px] text-slate-400 mt-1">Avg observation recency</div>
             </div>
@@ -358,22 +366,32 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
                       {cat.name} <span className="text-slate-400 font-normal">({cat.weight})</span>
                     </span>
                     <span className="font-mono font-bold text-slate-900 dark:text-white">
-                      {cat.score}/100
+                      {cat.score !== null ? (
+                        `${cat.score}/100`
+                      ) : (
+                        <span className="text-slate-400 dark:text-slate-500 font-normal italic">
+                          Unavailable
+                        </span>
+                      )}
                     </span>
                   </div>
                   <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        cat.score >= 85
-                          ? 'bg-emerald-500'
-                          : cat.score >= 70
-                          ? 'bg-blue-500'
-                          : cat.score >= 60
-                          ? 'bg-amber-500'
-                          : 'bg-rose-500'
-                      }`}
-                      style={{ width: `${cat.score}%` }}
-                    />
+                    {cat.score !== null ? (
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          cat.score >= 85
+                            ? 'bg-emerald-500'
+                            : cat.score >= 70
+                            ? 'bg-blue-500'
+                            : cat.score >= 60
+                            ? 'bg-amber-500'
+                            : 'bg-rose-500'
+                        }`}
+                        style={{ width: `${cat.score}%` }}
+                      />
+                    ) : (
+                      <div className="h-full w-full bg-slate-200/50 dark:bg-slate-700/50 border-r-2 border-dashed border-slate-400 dark:border-slate-500" />
+                    )}
                   </div>
                 </div>
               ))}

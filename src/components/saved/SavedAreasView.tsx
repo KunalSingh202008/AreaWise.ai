@@ -73,13 +73,19 @@ export const SavedAreasView: React.FC<SavedAreasViewProps> = ({
                 <div className="flex items-baseline justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 mb-4">
                   <span className="text-xs text-slate-500">Official AreaScore:</span>
                   <span className="text-2xl font-black font-mono text-slate-900 dark:text-white">
-                    {locality.scores.overallScore} <span className="text-xs font-normal text-slate-400">/ 100</span>
+                    {locality.scores.overallScore !== null ? (
+                      <>
+                        {locality.scores.overallScore} <span className="text-xs font-normal text-slate-400">/ 100</span>
+                      </>
+                    ) : (
+                      <span className="text-sm font-bold text-amber-600 dark:text-amber-400">Withheld</span>
+                    )}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-500 mb-2">
                   <div>Coverage: <strong className="text-slate-700 dark:text-slate-300">{locality.scores.coverageScore}%</strong></div>
-                  <div>Confidence: <strong className="text-slate-700 dark:text-slate-300">{locality.scores.confidenceScore}%</strong></div>
+                  <div>Confidence: <strong className="text-slate-700 dark:text-slate-300">{locality.scores.confidenceScore !== null ? `${locality.scores.confidenceScore}%` : 'Unrated'}</strong></div>
                 </div>
               </div>
 

@@ -133,10 +133,16 @@ export const LandingView: React.FC<LandingViewProps> = ({
                         </div>
                       </div>
                       <div className="text-right">
-                        <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 font-mono">
-                          {loc.scores.overallScore}
+                        <span className="text-sm font-black font-mono">
+                          {loc.scores.overallScore !== null ? (
+                            <span className="text-emerald-600 dark:text-emerald-400">{loc.scores.overallScore}</span>
+                          ) : (
+                            <span className="text-amber-600 dark:text-amber-400 text-xs">Withheld</span>
+                          )}
                         </span>
-                        <div className="text-[10px] text-slate-400">AreaScore</div>
+                        <div className="text-[10px] text-slate-400">
+                          {loc.scores.overallScore !== null ? 'AreaScore' : `${loc.scores.coverageScore}% Coverage`}
+                        </div>
                       </div>
                     </button>
                   ))
@@ -296,7 +302,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
                   referrerPolicy="no-referrer"
                 />
                 <div className="absolute top-3 right-3 bg-slate-900/90 backdrop-blur-md text-white px-2.5 py-1 rounded-xl text-xs font-black font-mono border border-white/20">
-                  {locality.scores.overallScore} / 100
+                  {locality.scores.overallScore !== null ? `${locality.scores.overallScore} / 100` : 'Score Withheld'}
                 </div>
                 <div className="absolute bottom-3 left-3 bg-slate-900/80 backdrop-blur-md text-white px-2.5 py-0.5 rounded-lg text-[11px] font-bold">
                   PIN {locality.pincode}

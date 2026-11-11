@@ -32,7 +32,7 @@ export interface Facility {
   distanceMeters: number;
   address: string;
   source: string;
-  verificationStatus: 'verified' | 'official_registry' | 'community_reported';
+  verificationStatus: 'verified' | 'official_registry' | 'community_reported' | 'unverified';
   lastVerifiedDate: string;
   metadata?: Record<string, any>;
 }
@@ -59,69 +59,54 @@ export interface CategoryIndicator {
   }[];
 }
 
+export interface LocalityCategoryScores {
+  connectivity: number | null;
+  healthcare: number | null;
+  education: number | null;
+  environment: number | null;
+  civicInfrastructure: number | null;
+  dailyAmenities: number | null;
+  propertyMarketTransparency: number | null;
+}
+
 export interface LocalityScore {
-  overallScore: number | null; // null if coverage < 40%
+  overallScore: number | null; // null if coverage < 50% or required data missing
   methodologyVersion: string;
   isEligibleForOverallScore: boolean;
   coverageScore: number; // 0 - 100 (% of indicators with data)
-  confidenceScore: number; // 0 - 100 (reliability of sources and sample density)
-  dataFreshnessDays: number; // average age of underlying records in days
+  confidenceScore: number | null; // 0 - 100 (reliability of sources and verification, separate from coverage; null if no evidence)
+  dataFreshnessDays: number | null; // average age of underlying records in days, null if no dated observations
   lastCalculatedAt: string;
-  categoryScores: {
-    connectivity: number;
-    healthcare: number;
-    education: number;
-    environment: number;
-    civicInfrastructure: number;
-    dailyAmenities: number;
-    propertyMarketTransparency: number;
-  };
+  categoryScores: LocalityCategoryScores;
   missingCategories: string[];
 }
 
 export interface ProfileScores {
-  familyScore: number;
-  studentScore: number;
-  commuterScore: number;
-  investorScore: number;
+  familyScore: number | null;
+  studentScore: number | null;
+  commuterScore: number | null;
+  investorScore: number | null;
 }
 
-export interface YearlyMarketTrend {
-  year: string; // '2020', '2021', '2022', '2023', '2024', '2025', '2026'
-  avgPriceSqFt: number; // in ₹/sq.ft
-  rentalYieldPercent: number; // % e.g. 3.8
-  infraGrowthIndex: number; // 0-100 scale
-  commercialRateSqFt: number; // in ₹/sq.ft
-  transactionVolumeIndex: number; // 0-150 relative scale
+export interface StatutoryCircleRate {
+  category: string;
+  ratePerSqMeter: number;
+  ratePerSqFt: number;
+  effectiveYear: string;
+  registrationAuthority: string;
+  issuingAuthority: string;
+  sourceDocumentName: string;
+  gazetteRef?: string;
+  isVerified: boolean;
+  verificationStatus: 'verified_official_gazette' | 'unverified_statutory_benchmark';
 }
 
-export interface InfrastructureCatalyst {
-  year: string;
-  title: string;
-  description: string;
-  impactTier: 'High' | 'Medium' | 'Transformational';
-  status: 'completed' | 'under_construction' | 'planned';
-}
-
-export interface PropertyMarketData {
-  historicalTrends: YearlyMarketTrend[];
-  cagr5Year: number; // e.g. 9.4
-  currentPriceRange: {
-    min: number;
-    max: number;
-    avg: number;
-  };
-  rentalRangeMonthly: {
-    min: number;
-    max: number;
-    avg: number;
-  };
-  investmentPotentialScore: number; // 0-100
-  investmentRating: string; // e.g. 'High Growth Node', 'Stable Rental Yield'
-  priceToRentalRatio: number; // e.g. 26.5
-  infraPipelineScore: number; // 0-100
-  catalysts: InfrastructureCatalyst[];
-  dataSourceNote: string;
+export interface MarketTransparencyRecord {
+  circleRate: StatutoryCircleRate | null;
+  transparencyScore: number | null;
+  verifiedTransactionRecordsCount: number;
+  priceDiscoveryStatus: 'statutory_only' | 'partial_verified_registry' | 'insufficient_evidence';
+  guidanceNote: string;
 }
 
 export interface Locality {
@@ -145,7 +130,7 @@ export interface Locality {
   indicators: CategoryIndicator[];
   facilities: Facility[];
   missingDataNotes: string[];
-  propertyMarketData?: PropertyMarketData;
+  propertyMarketData?: MarketTransparencyRecord;
   isCustomResolved?: boolean;
 }
 

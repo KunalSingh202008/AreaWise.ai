@@ -1,5 +1,5 @@
-import { Locality, Facility, CommunityReport, DataSourceStatus, Coordinates, PropertyMarketData } from '../src/types';
-import { calculateAreaScore, calculateProfileScores } from './scoring';
+import { Locality, Facility, CommunityReport, DataSourceStatus, Coordinates, MarketTransparencyRecord, LocalityCategoryScores } from '../src/types';
+import { calculateAreaScore, calculateProfileScores, BENCHMARK_INDICATORS_COUNT } from './scoring';
 
 // Real Haversine Distance Helper in Meters
 export function haversineDistanceMeters(c1: Coordinates, c2: Coordinates): number {
@@ -55,7 +55,7 @@ export const MASTER_VARANASI_FACILITIES: Facility[] = [
     distanceMeters: 0,
     address: 'Sankat Mochan Road, Durgakund',
     source: 'CMO Varanasi Directory',
-    verificationStatus: 'verified',
+    verificationStatus: 'unverified',
     lastVerifiedDate: '2026-09-14',
   },
   {
@@ -187,7 +187,7 @@ export const MASTER_VARANASI_FACILITIES: Facility[] = [
     distanceMeters: 0,
     address: 'Cantonment Area, Varanasi',
     source: 'CBSE Affiliation Portal',
-    verificationStatus: 'verified',
+    verificationStatus: 'unverified',
     lastVerifiedDate: '2026-07-15',
   },
 
@@ -295,7 +295,7 @@ export const MASTER_VARANASI_FACILITIES: Facility[] = [
     distanceMeters: 0,
     address: 'Tulsi Vihar, Mahmoorganj',
     source: 'VDA Parks Roster',
-    verificationStatus: 'verified',
+    verificationStatus: 'unverified',
     lastVerifiedDate: '2026-08-20',
   },
 
@@ -310,7 +310,7 @@ export const MASTER_VARANASI_FACILITIES: Facility[] = [
     distanceMeters: 0,
     address: 'Rath Yatra - Sigra Road',
     source: 'Trade License Registry',
-    verificationStatus: 'verified',
+    verificationStatus: 'unverified',
     lastVerifiedDate: '2026-10-10',
   },
   {
@@ -323,7 +323,7 @@ export const MASTER_VARANASI_FACILITIES: Facility[] = [
     distanceMeters: 0,
     address: 'Godowlia Crossing, Varanasi',
     source: 'Varanasi Vyapar Mandal Directory',
-    verificationStatus: 'verified',
+    verificationStatus: 'unverified',
     lastVerifiedDate: '2026-09-30',
   },
   {
@@ -336,7 +336,7 @@ export const MASTER_VARANASI_FACILITIES: Facility[] = [
     distanceMeters: 0,
     address: 'Opposite BHU Main Gate, Lanka',
     source: 'District Trade Registry',
-    verificationStatus: 'verified',
+    verificationStatus: 'unverified',
     lastVerifiedDate: '2026-10-15',
   },
 
@@ -395,8 +395,85 @@ export function getFacilitiesForLocation(center: Coordinates, radiusMeters = 500
     .sort((a, b) => a.distanceMeters - b.distanceMeters);
 }
 
-// 15 Comprehensive Varanasi Locality Seeds
-export const VARANASI_LOCALITIES: Locality[] = [
+/**
+ * Phase 2A Data Integrity Builder:
+ * Ensures that category scores can ONLY be populated if an actual underlying evidence indicator
+ * exists in locality.indicators. Any category without an indicator is strictly null.
+ * All overall scores and profile scores are dynamically evaluated using calculateAreaScore
+ * and calculateProfileScores, eliminating all static hardcoded numbers.
+ */
+export function buildEvidenceGroundedLocality(
+  base: Omit<Locality, 'scores' | 'profileScores'>
+): Locality {
+  const sanitizedCategories: LocalityCategoryScores = {
+    connectivity: null,
+    healthcare: null,
+    education: null,
+    environment: null,
+    civicInfrastructure: null,
+    dailyAmenities: null,
+    propertyMarketTransparency: null,
+  };
+
+  const indicatorCategoryMap: Record<string, keyof LocalityCategoryScores> = {
+    'connectivity & transit': 'connectivity',
+    'connectivity': 'connectivity',
+    'healthcare accessibility': 'healthcare',
+    'healthcare': 'healthcare',
+    'education access': 'education',
+    'education': 'education',
+    'environmental intelligence': 'environment',
+    'environmental': 'environment',
+    'environment': 'environment',
+    'civic infrastructure': 'civicInfrastructure',
+    'civic': 'civicInfrastructure',
+    'daily amenities': 'dailyAmenities',
+    'amenities': 'dailyAmenities',
+    'property market transparency': 'propertyMarketTransparency',
+    'property transparency': 'propertyMarketTransparency',
+  };
+
+  for (const ind of base.indicators) {
+    const key = indicatorCategoryMap[ind.name.trim().toLowerCase()];
+    if (key && (ind.status === 'available' || ind.status === 'partially_available')) {
+      sanitizedCategories[key] = ind.score;
+    }
+  }
+
+  const scores = calculateAreaScore(sanitizedCategories, {
+    indicators: base.indicators,
+    totalPossibleIndicators: BENCHMARK_INDICATORS_COUNT,
+  });
+
+  const profileScores = calculateProfileScores(sanitizedCategories);
+
+  const cautions = [...(base.cautions || [])];
+  const missingDataNotes = [...(base.missingDataNotes || [])];
+
+  if (base.indicators.length === 0) {
+    const dataAlert =
+      'Data Integrity Notice: Empirical telemetry and statutory registry indicators are unverified for this ward. All 7 category scores and overall AreaScore are strictly withheld (N/A) pending ground-truth sensor integration.';
+    if (!cautions.some((c) => c.includes('Data Integrity Notice') || c.includes('withheld'))) {
+      cautions.unshift(dataAlert);
+    }
+    const note =
+      'Official registry and telemetry indicators for this locality are pending integration. All scores are withheld per AreaWise scoring methodology v1.3.0.';
+    if (!missingDataNotes.some((n) => n.includes('withheld per AreaWise') || n.includes('pending integration'))) {
+      missingDataNotes.unshift(note);
+    }
+  }
+
+  return {
+    ...base,
+    scores,
+    profileScores,
+    cautions,
+    missingDataNotes,
+  };
+}
+
+// 13 Comprehensive Varanasi Locality Seeds (Phase 2A Data-Integrity Clean Baseline)
+export const RAW_LOCALITIES: Omit<Locality, 'scores' | 'profileScores'>[] = [
   // 1. Sigra
   {
     id: 'sigra',
@@ -419,31 +496,6 @@ export const VARANASI_LOCALITIES: Locality[] = [
     hindiDescription:
       'सिगरा वाराणसी कैंट जंक्शन के निकट स्थित एक प्रमुख व्यापारिक इलाका है। डॉ. सम्पूर्णानंद स्पोर्ट्स स्टेडियम और आईपी मॉल के कारण यह खेल व खरीदारी का मुख्य केंद्र है।',
     previewImage: '/src/assets/images/sigra_locality_preview_1794054120651.jpg',
-    scores: {
-      overallScore: 78.4,
-      methodologyVersion: 'v1.2.0-pilot',
-      isEligibleForOverallScore: true,
-      coverageScore: 92,
-      confidenceScore: 86,
-      dataFreshnessDays: 6,
-      lastCalculatedAt: '2026-11-05T10:30:00Z',
-      categoryScores: {
-        connectivity: 91,
-        healthcare: 79,
-        education: 74,
-        environment: 62,
-        civicInfrastructure: 81,
-        dailyAmenities: 93,
-        propertyMarketTransparency: 72,
-      },
-      missingCategories: [],
-    },
-    profileScores: {
-      familyScore: 75,
-      studentScore: 82,
-      commuterScore: 91,
-      investorScore: 76,
-    },
     strengths: [
       'Transit proximity: 1.8 km to Varanasi Cantt Railway Station and Inter-State Bus Terminal (ISBT)',
       'Direct walking access to newly renovated Dr. Sampurnanand Sports Complex (Olympic-size pool, indoor arena)',
@@ -508,46 +560,22 @@ export const VARANASI_LOCALITIES: Locality[] = [
       'Sub-surface groundwater contamination data for Sigra ward is currently pending UP Jal Nigam quarterly laboratory publication.',
     ],
     propertyMarketData: {
-      historicalTrends: [
-        { year: '2020', avgPriceSqFt: 4950, rentalYieldPercent: 3.4, infraGrowthIndex: 52, commercialRateSqFt: 7200, transactionVolumeIndex: 68 },
-        { year: '2021', avgPriceSqFt: 5400, rentalYieldPercent: 3.5, infraGrowthIndex: 58, commercialRateSqFt: 7900, transactionVolumeIndex: 74 },
-        { year: '2022', avgPriceSqFt: 6150, rentalYieldPercent: 3.6, infraGrowthIndex: 67, commercialRateSqFt: 8800, transactionVolumeIndex: 88 },
-        { year: '2023', avgPriceSqFt: 6900, rentalYieldPercent: 3.8, infraGrowthIndex: 78, commercialRateSqFt: 9800, transactionVolumeIndex: 96 },
-        { year: '2024', avgPriceSqFt: 7650, rentalYieldPercent: 3.9, infraGrowthIndex: 85, commercialRateSqFt: 11200, transactionVolumeIndex: 110 },
-        { year: '2025', avgPriceSqFt: 8400, rentalYieldPercent: 4.0, infraGrowthIndex: 91, commercialRateSqFt: 12400, transactionVolumeIndex: 122 },
-        { year: '2026 (Est)', avgPriceSqFt: 9150, rentalYieldPercent: 4.1, infraGrowthIndex: 94, commercialRateSqFt: 13600, transactionVolumeIndex: 130 },
-      ],
-      cagr5Year: 11.2,
-      currentPriceRange: { min: 7200, max: 9800, avg: 8400 },
-      rentalRangeMonthly: { min: 16000, max: 32000, avg: 24000 },
-      investmentPotentialScore: 84,
-      investmentRating: 'High Growth Commercial Corridor',
-      priceToRentalRatio: 25.0,
-      infraPipelineScore: 88,
-      catalysts: [
-        {
-          year: '2022-2023',
-          title: 'Dr. Sampurnanand International Stadium Reconstruction',
-          description: 'Smart City ₹350 Cr modernization into a multi-sport Olympic arena boosting footfall and hospitality demand.',
-          impactTier: 'Transformational',
-          status: 'completed',
-        },
-        {
-          year: '2024-2025',
-          title: 'Varanasi Cantt - Rath Yatra - Godowlia Ropeway Feeder Station',
-          description: "India's first urban transit ropeway linking Cantt Station through Rath Yatra/Sigra in 15 mins.",
-          impactTier: 'Transformational',
-          status: 'under_construction',
-        },
-        {
-          year: '2026-2027',
-          title: 'Underground Multi-Level EV Smart Parking Complex',
-          description: 'Relieving on-street commercial parking congestion along IP Sigra retail strip.',
-          impactTier: 'High',
-          status: 'planned',
-        },
-      ],
-      dataSourceNote: 'Verified UP Stamp & Registration Department Circle Rates, Varanasi Smart City SPV Progress Report, and AreaWise Empirical Index.',
+      circleRate: {
+        category: 'Residential Urban Plotted / Main Road Commercial',
+        ratePerSqMeter: 54000,
+        ratePerSqFt: 5017,
+        effectiveYear: '2024-2026',
+        issuingAuthority: 'Collector / District Magistrate, Varanasi (District Circle Rate Committee)',
+        registrationAuthority: 'Sub-Registrar Sadar, Varanasi (UP Stamp & Registration Dept)',
+        sourceDocumentName: 'UP Stamp (Valuation of Property) Rules 1997, Tehsil Sadar Schedule',
+        gazetteRef: 'Pending certified copy audit (IGRSUP Tehsil Sadar Valuation List)',
+        isVerified: false,
+        verificationStatus: 'unverified_statutory_benchmark',
+      },
+      transparencyScore: null,
+      verifiedTransactionRecordsCount: 0,
+      priceDiscoveryStatus: 'statutory_only',
+      guidanceNote: 'Circle rates reflect the statutory minimum registration baseline under Rule 4, UP Stamp (Valuation of Property) Rules 1997. Private market transactions remain unverified.',
     },
   },
 
@@ -573,31 +601,6 @@ export const VARANASI_LOCALITIES: Locality[] = [
     hindiDescription:
       'लंका काशी हिंदू विश्वविद्यालय (BHU) के सिंहद्वार पर स्थित एक प्रमुख सांस्कृतिक और शैक्षणिक इलाका है, जहां सर सुंदरलाल अस्पताल और ट्रॉमा सेंटर जैसी शीर्ष स्वास्थ्य सुविधाएं हैं।',
     previewImage: '/src/assets/images/lanka_locality_preview_1794054121378.jpg',
-    scores: {
-      overallScore: 84.6,
-      methodologyVersion: 'v1.2.0-pilot',
-      isEligibleForOverallScore: true,
-      coverageScore: 95,
-      confidenceScore: 92,
-      dataFreshnessDays: 4,
-      lastCalculatedAt: '2026-11-06T08:15:00Z',
-      categoryScores: {
-        connectivity: 75,
-        healthcare: 96,
-        education: 98,
-        environment: 84,
-        civicInfrastructure: 76,
-        dailyAmenities: 88,
-        propertyMarketTransparency: 75,
-      },
-      missingCategories: [],
-    },
-    profileScores: {
-      familyScore: 86,
-      studentScore: 97,
-      commuterScore: 74,
-      investorScore: 81,
-    },
     strengths: [
       'Top-tier educational hub: BHU campus, IIT BHU, faculties of Medicine, Science, and Arts within 300m',
       'Unsurpassed healthcare: Sir Sunderlal Hospital (1,500+ beds) and Apex Trauma Centre provide immediate specialized care',
@@ -669,31 +672,6 @@ export const VARANASI_LOCALITIES: Locality[] = [
     hindiDescription:
       'महमूरगंज वाराणसी के सबसे प्रतिष्ठित और शांत आवासीय इलाकों में से एक है, जिसमें चौड़ी सड़कें, कम प्रदूषण और निजी क्लीनिकों की भरपूर सुविधा है।',
     previewImage: '/src/assets/images/mahmoorganj_locality_preview_1794054121380.jpg',
-    scores: {
-      overallScore: 82.1,
-      methodologyVersion: 'v1.2.0-pilot',
-      isEligibleForOverallScore: true,
-      coverageScore: 88,
-      confidenceScore: 89,
-      dataFreshnessDays: 5,
-      lastCalculatedAt: '2026-11-06T11:45:00Z',
-      categoryScores: {
-        connectivity: 82,
-        healthcare: 88,
-        education: 85,
-        environment: 79,
-        civicInfrastructure: 86,
-        dailyAmenities: 80,
-        propertyMarketTransparency: 84,
-      },
-      missingCategories: [],
-    },
-    profileScores: {
-      familyScore: 89,
-      studentScore: 71,
-      commuterScore: 83,
-      investorScore: 84,
-    },
     strengths: [
       'Quiet, low-noise residential environment (53 dBA daytime average, significantly lower than Sigra)',
       'High property title clarity with strong presence of approved private colonies and RERA compliant boutique apartments',
@@ -747,31 +725,6 @@ export const VARANASI_LOCALITIES: Locality[] = [
     hindiDescription:
       'भेलूपुर वाराणसी का मुख्य नागरिक एवं पेयजल आपूर्ति केंद्र है, जो कामाच्छा से रवींद्रपुरी के बीच स्थित है।',
     previewImage: '/src/assets/images/sigra_locality_preview_1794054120651.jpg',
-    scores: {
-      overallScore: 80.5,
-      methodologyVersion: 'v1.2.0-pilot',
-      isEligibleForOverallScore: true,
-      coverageScore: 90,
-      confidenceScore: 88,
-      dataFreshnessDays: 5,
-      lastCalculatedAt: '2026-11-06T10:00:00Z',
-      categoryScores: {
-        connectivity: 84,
-        healthcare: 82,
-        education: 86,
-        environment: 71,
-        civicInfrastructure: 89,
-        dailyAmenities: 85,
-        propertyMarketTransparency: 77,
-      },
-      missingCategories: [],
-    },
-    profileScores: {
-      familyScore: 84,
-      studentScore: 80,
-      commuterScore: 85,
-      investorScore: 80,
-    },
     strengths: [
       'Top municipal water infrastructure: Bhelupur Water Treatment Plant guarantees consistent pressure',
       'Central connectivity: 10 minutes to Cantt Station and 8 minutes to Assi Ghat',
@@ -824,31 +777,6 @@ export const VARANASI_LOCALITIES: Locality[] = [
     hindiDescription:
       'अस्सी वाराणसी का सुप्रसिद्ध गंगा तटवर्ती इलाका है, जो सुबह-ए-बनारस, साहित्यिक गतिविधियों और कलात्मक जीवनशैली के लिए जाना जाता है।',
     previewImage: '/src/assets/images/lanka_locality_preview_1794054121378.jpg',
-    scores: {
-      overallScore: 81.2,
-      methodologyVersion: 'v1.2.0-pilot',
-      isEligibleForOverallScore: true,
-      coverageScore: 91,
-      confidenceScore: 87,
-      dataFreshnessDays: 4,
-      lastCalculatedAt: '2026-11-06T12:00:00Z',
-      categoryScores: {
-        connectivity: 76,
-        healthcare: 78,
-        education: 86,
-        environment: 88,
-        civicInfrastructure: 74,
-        dailyAmenities: 92,
-        propertyMarketTransparency: 74,
-      },
-      missingCategories: [],
-    },
-    profileScores: {
-      familyScore: 80,
-      studentScore: 92,
-      commuterScore: 72,
-      investorScore: 82,
-    },
     strengths: [
       'Direct walking access to Ganga promenade and Assi Ghat cultural amphitheater',
       'Vibrant international lifestyle: Organic cafes, bakeries, yoga centers, and art ateliers',
@@ -901,31 +829,6 @@ export const VARANASI_LOCALITIES: Locality[] = [
     hindiDescription:
       'दुर्गाकुंड ऐतिहासिक दुर्गा मंदिर और कुंड के आसपास बसा प्रमुख इलाका है, जो लंका और भेलूपुर को जोड़ता है।',
     previewImage: '/src/assets/images/lanka_locality_preview_1794054121378.jpg',
-    scores: {
-      overallScore: 79.8,
-      methodologyVersion: 'v1.2.0-pilot',
-      isEligibleForOverallScore: true,
-      coverageScore: 89,
-      confidenceScore: 86,
-      dataFreshnessDays: 5,
-      lastCalculatedAt: '2026-11-05T14:00:00Z',
-      categoryScores: {
-        connectivity: 80,
-        healthcare: 86,
-        education: 85,
-        environment: 69,
-        civicInfrastructure: 78,
-        dailyAmenities: 88,
-        propertyMarketTransparency: 73,
-      },
-      missingCategories: [],
-    },
-    profileScores: {
-      familyScore: 81,
-      studentScore: 84,
-      commuterScore: 79,
-      investorScore: 78,
-    },
     strengths: [
       'Proximity to Heritage Hospitals and specialized diagnostic clinics on Sankat Mochan road',
       'Walking access to premier religious and cultural landmarks (Durga Kund, Sankat Mochan)',
@@ -961,31 +864,6 @@ export const VARANASI_LOCALITIES: Locality[] = [
     hindiDescription:
       'शिवपुर वाराणसी का उत्तरी विकास क्षेत्र है जो बाबतपुर एयरपोर्ट रोड और एनएच-31 पर स्थित है।',
     previewImage: '/src/assets/images/hero_varanasi_urban_1794054119447.jpg',
-    scores: {
-      overallScore: 76.2,
-      methodologyVersion: 'v1.2.0-pilot',
-      isEligibleForOverallScore: true,
-      coverageScore: 84,
-      confidenceScore: 82,
-      dataFreshnessDays: 6,
-      lastCalculatedAt: '2026-11-06T09:00:00Z',
-      categoryScores: {
-        connectivity: 88,
-        healthcare: 70,
-        education: 72,
-        environment: 75,
-        civicInfrastructure: 74,
-        dailyAmenities: 76,
-        propertyMarketTransparency: 79,
-      },
-      missingCategories: [],
-    },
-    profileScores: {
-      familyScore: 74,
-      studentScore: 72,
-      commuterScore: 89,
-      investorScore: 86,
-    },
     strengths: [
       'Fastest airport access: 14 km direct expressway route to Babatpur Airport',
       'Affordable plotted land and modern gated residential township projects',
@@ -1022,31 +900,6 @@ export const VARANASI_LOCALITIES: Locality[] = [
     hindiDescription:
       'सारनाथ विश्व प्रसिद्ध बौद्ध तीर्थस्थल है। यह वाराणसी का सबसे हरा-भरा और शांत इलाका है जहां धमेख स्तूप और डियर पार्क स्थित हैं।',
     previewImage: '/src/assets/images/hero_varanasi_urban_1794054119447.jpg',
-    scores: {
-      overallScore: 83.8,
-      methodologyVersion: 'v1.2.0-pilot',
-      isEligibleForOverallScore: true,
-      coverageScore: 89,
-      confidenceScore: 90,
-      dataFreshnessDays: 5,
-      lastCalculatedAt: '2026-11-06T15:00:00Z',
-      categoryScores: {
-        connectivity: 72,
-        healthcare: 76,
-        education: 85,
-        environment: 94,
-        civicInfrastructure: 82,
-        dailyAmenities: 79,
-        propertyMarketTransparency: 82,
-      },
-      missingCategories: [],
-    },
-    profileScores: {
-      familyScore: 88,
-      studentScore: 80,
-      commuterScore: 72,
-      investorScore: 85,
-    },
     strengths: [
       'Superb environmental quality: Cleanest air pocket in Varanasi urban district (AQI ~95-110 average)',
       'Abundant green public spaces: ASI protected gardens, Deer Park, Tibetan Monastery grounds',
@@ -1083,31 +936,6 @@ export const VARANASI_LOCALITIES: Locality[] = [
     hindiDescription:
       'छावनी क्षेत्र अपनी चौड़ी सड़कों, घने पेड़ों, ताज गंगेज जैसे लग्जरी होटलों और शांत माहौल के लिए प्रसिद्ध है।',
     previewImage: '/src/assets/images/hero_varanasi_urban_1794054119447.jpg',
-    scores: {
-      overallScore: 86.4,
-      methodologyVersion: 'v1.2.0-pilot',
-      isEligibleForOverallScore: true,
-      coverageScore: 91,
-      confidenceScore: 93,
-      dataFreshnessDays: 4,
-      lastCalculatedAt: '2026-11-06T16:00:00Z',
-      categoryScores: {
-        connectivity: 94,
-        healthcare: 85,
-        education: 88,
-        environment: 89,
-        civicInfrastructure: 92,
-        dailyAmenities: 84,
-        propertyMarketTransparency: 80,
-      },
-      missingCategories: [],
-    },
-    profileScores: {
-      familyScore: 91,
-      studentScore: 78,
-      commuterScore: 93,
-      investorScore: 84,
-    },
     strengths: [
       'Unrivalled cleanliness and civic upkeep supervised by the Cantonment Board',
       'Immediate access to Varanasi Cantt Railway Station (less than 1.2 km)',
@@ -1144,31 +972,6 @@ export const VARANASI_LOCALITIES: Locality[] = [
     hindiDescription:
       'पाण्डेयपुर वाराणसी का प्रमुख उत्तर-पूर्वी जंक्शन है जहां पंडित दीनदयाल उपाध्याय जिला अस्पताल और ईएसआईसी अस्पताल स्थित हैं।',
     previewImage: '/src/assets/images/sigra_locality_preview_1794054120651.jpg',
-    scores: {
-      overallScore: 77.5,
-      methodologyVersion: 'v1.2.0-pilot',
-      isEligibleForOverallScore: true,
-      coverageScore: 87,
-      confidenceScore: 85,
-      dataFreshnessDays: 5,
-      lastCalculatedAt: '2026-11-05T18:00:00Z',
-      categoryScores: {
-        connectivity: 82,
-        healthcare: 89,
-        education: 78,
-        environment: 64,
-        civicInfrastructure: 77,
-        dailyAmenities: 86,
-        propertyMarketTransparency: 72,
-      },
-      missingCategories: [],
-    },
-    profileScores: {
-      familyScore: 78,
-      studentScore: 79,
-      commuterScore: 84,
-      investorScore: 76,
-    },
     strengths: [
       'Two major multi-hundred-bed public hospitals within 600m (Deen Dayal & ESIC)',
       'Vibrant local market with affordable vegetable mandis and household utilities',
@@ -1204,31 +1007,6 @@ export const VARANASI_LOCALITIES: Locality[] = [
     hindiDescription:
       'अर्दली बाजार कलेक्ट्रेट और कचहरी के समीप स्थित प्रशासनिक क्षेत्र है जहां सरकारी अधिकारियों के आवास व न्यायिक सेवाएं केंद्रित हैं।',
     previewImage: '/src/assets/images/mahmoorganj_locality_preview_1794054121380.jpg',
-    scores: {
-      overallScore: 81.0,
-      methodologyVersion: 'v1.2.0-pilot',
-      isEligibleForOverallScore: true,
-      coverageScore: 89,
-      confidenceScore: 88,
-      dataFreshnessDays: 5,
-      lastCalculatedAt: '2026-11-06T11:00:00Z',
-      categoryScores: {
-        connectivity: 87,
-        healthcare: 80,
-        education: 82,
-        environment: 73,
-        civicInfrastructure: 88,
-        dailyAmenities: 83,
-        propertyMarketTransparency: 79,
-      },
-      missingCategories: [],
-    },
-    profileScores: {
-      familyScore: 83,
-      studentScore: 76,
-      commuterScore: 87,
-      investorScore: 80,
-    },
     strengths: [
       'Highest police surveillance and administrative priority in the district',
       'Immediate access to legal, financial, and revenue documentation services',
@@ -1263,31 +1041,6 @@ export const VARANASI_LOCALITIES: Locality[] = [
     hindiDescription:
       'गोदौलिया प्राचीन बनारस का केंद्र है, जो काशी विश्वनाथ कॉरिडोर और दशाश्वमेध घाट का मुख्य प्रवेश द्वार है।',
     previewImage: '/src/assets/images/lanka_locality_preview_1794054121378.jpg',
-    scores: {
-      overallScore: 77.8,
-      methodologyVersion: 'v1.2.0-pilot',
-      isEligibleForOverallScore: true,
-      coverageScore: 92,
-      confidenceScore: 88,
-      dataFreshnessDays: 4,
-      lastCalculatedAt: '2026-11-06T13:00:00Z',
-      categoryScores: {
-        connectivity: 74,
-        healthcare: 76,
-        education: 73,
-        environment: 65,
-        civicInfrastructure: 80,
-        dailyAmenities: 96,
-        propertyMarketTransparency: 68,
-      },
-      missingCategories: [],
-    },
-    profileScores: {
-      familyScore: 73,
-      studentScore: 81,
-      commuterScore: 73,
-      investorScore: 84,
-    },
     strengths: [
       'Unsurpassed walking proximity to Kashi Vishwanath Dham and evening Ganga Aarti',
       'Round-the-clock vibrant markets with famous banarasi paan, chaat, and textiles',
@@ -1298,9 +1051,69 @@ export const VARANASI_LOCALITIES: Locality[] = [
     ],
     indicators: [],
     facilities: getFacilitiesForLocation({ lat: 25.3090, lng: 83.0060 }, 2500),
-    missingDataNotes: [],
+    missingDataNotes: [
+      'Sub-surface heritage lane utility surveys are incomplete due to pedestrian-only access constraints.',
+    ],
+  },
+
+  // 13. Ramnagar (Low-Coverage Verification Benchmark)
+  {
+    id: 'ramnagar',
+    name: 'Ramnagar',
+    hindiName: 'रामनगर',
+    city: 'Varanasi',
+    state: 'Uttar Pradesh',
+    pincode: '221008',
+    center: { lat: 25.2685, lng: 83.0290 },
+    bounds: [
+      [25.2780, 83.0200],
+      [25.2760, 83.0380],
+      [25.2590, 83.0360],
+      [25.2600, 83.0180],
+    ],
+    tagline: 'Historic Fort Town Across Ganga · Evidence Ingestion in Progress',
+    hindiTagline: 'गंगा पार ऐतिहासिक किला क्षेत्र · डेटा एकत्रीकरण जारी',
+    description:
+      'Ramnagar is situated on the eastern bank of the Ganga, famous for Ramnagar Fort and traditional Dussehra. Civic sensor telemetry and ambient monitors are currently uninstalled.',
+    hindiDescription:
+      'रामनगर गंगा के पूर्वी तट पर स्थित ऐतिहासिक कस्बा है। यहां नगर निगम की स्वचालित जल एवं वायु गुणवत्ता सेंसर मॉनिटरिंग अभी स्थापित की जा रही है।',
+    previewImage: '/src/assets/images/lanka_locality_preview_1794054121378.jpg',
+    strengths: [
+      'Ganga riverfront heritage: Direct proximity to 18th-century Ramnagar Fort museum',
+      'Affordable peri-urban land parcels compared to trans-Ganga city core',
+    ],
+    cautions: [
+      'Evidence Coverage Alert: Only 2 of 7 core categories have verified empirical records. Overall AreaScore is withheld.',
+      'Single pontoon / Malviya bridge transit bottleneck during peak hours',
+      'Municipal water quality telemetry and continuous ambient PM2.5 sensors are not yet deployed in this municipal board ward.',
+    ],
+    indicators: [
+      {
+        id: 'conn-ramnagar',
+        name: 'Connectivity & Transit',
+        score: 56,
+        weight: 0.20,
+        status: 'available',
+        summary: 'Trans-Ganga road linkage via Shastri Bridge and Samne Ghat Bridge.',
+        metrics: [
+          { label: 'Distance to Varanasi Cantt', value: '8.4', unit: 'km', source: 'OSM Spatial Routing', date: '2026-11-01' },
+        ],
+        sources: [
+          { name: 'Roadway Network Audit', organization: 'Public Works Dept', date: '2026-10-10', type: 'osm_data' },
+        ],
+      },
+    ],
+    facilities: getFacilitiesForLocation({ lat: 25.2685, lng: 83.0290 }, 3000),
+    missingDataNotes: [
+      'Continuous Ambient Air Quality Monitoring Station (CAAQMS) is absent in Ramnagar ward (closest proxy station is over 7.5 km away).',
+      'Piped municipal water pressure SCADA audit has not been published by UP Jal Nigam for this sector.',
+      'Property title transparency data is currently withheld pending sub-registrar digitisation.',
+    ],
   },
 ];
+
+// Phase 2A Verified Grounded Localities Export: Derived strictly from empirical indicators
+export const VARANASI_LOCALITIES: Locality[] = RAW_LOCALITIES.map(buildEvidenceGroundedLocality);
 
 // DYNAMIC RESOLUTION ENGINE: Resolves any arbitrary point / address in Varanasi
 export function resolveLocationByCoordinates(
@@ -1345,16 +1158,17 @@ export function resolveLocationByCoordinates(
   const distToCanttMeters = haversineDistanceMeters(center, { lat: 25.3280, lng: 82.9860 });
   const distToCanttKm = (distToCanttMeters / 1000).toFixed(1);
 
-  // Dynamic Category Scores
+  // Dynamic Category Scores: Only populate categories with verified spatial observations
   const connectivityScore = Math.min(95, Math.max(50, Math.round(92 - (distToCanttMeters / 1000) * 4.5 + transitIn2km * 3)));
-  const healthcareScore = Math.min(95, Math.max(50, Math.round(65 + healthIn2km * 6)));
-  const educationScore = Math.min(96, Math.max(50, Math.round(62 + eduIn2km * 7)));
-  const envScore = Math.min(92, Math.max(55, Math.round(68 + parksIn2km * 7)));
-  const civicScore = 78;
-  const amenitiesScore = Math.min(94, Math.max(55, Math.round(65 + amenitiesIn1km * 7)));
-  const propScore = 75;
+  const healthcareScore = healthIn2km > 0 ? Math.min(95, Math.max(50, Math.round(65 + healthIn2km * 6))) : null;
+  const educationScore = eduIn2km > 0 ? Math.min(96, Math.max(50, Math.round(62 + eduIn2km * 7))) : null;
+  const envScore = parksIn2km > 0 ? Math.min(92, Math.max(55, Math.round(68 + parksIn2km * 7))) : null;
+  // Civic and property transparency cannot be observed for an arbitrary coordinate without ward-level telemetry & deed registry
+  const civicScore = null;
+  const amenitiesScore = amenitiesIn1km > 0 ? Math.min(94, Math.max(55, Math.round(65 + amenitiesIn1km * 7))) : null;
+  const propScore = null;
 
-  const categoryScores = {
+  const categoryScores: LocalityCategoryScores = {
     connectivity: connectivityScore,
     healthcare: healthcareScore,
     education: educationScore,
@@ -1364,7 +1178,11 @@ export function resolveLocationByCoordinates(
     propertyMarketTransparency: propScore,
   };
 
-  const calculatedScores = calculateAreaScore(categoryScores, undefined, 24, 21);
+  const calculatedScores = calculateAreaScore(categoryScores, {
+    totalPossibleIndicators: 24,
+    sourceTiers: ['osm_data'],
+    dataFreshnessDays: 1,
+  });
   const profileScores = calculateProfileScores(categoryScores);
 
   // Generate synthetic bounding box (approx 600m delta)
@@ -1449,7 +1267,7 @@ export const INITIAL_COMMUNITY_REPORTS: CommunityReport[] = [
     lat: 25.2804,
     lng: 83.0002,
     imageUrl: '/src/assets/images/lanka_locality_preview_1794054121378.jpg',
-    status: 'verified',
+    status: 'action_taken',
     submittedBy: 'Dr. Priya Maurya (Resident Scholar)',
     submittedAt: '2026-10-22T09:15:00Z',
     upvotes: 41,
@@ -1480,7 +1298,7 @@ export const INITIAL_COMMUNITY_REPORTS: CommunityReport[] = [
     lat: 25.2898,
     lng: 83.0062,
     imageUrl: '/src/assets/images/lanka_locality_preview_1794054121378.jpg',
-    status: 'verified',
+    status: 'action_taken',
     submittedBy: 'Meera Sen (Student, BHU)',
     submittedAt: '2026-11-03T19:30:00Z',
     upvotes: 35,

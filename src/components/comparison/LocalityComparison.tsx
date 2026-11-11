@@ -145,29 +145,46 @@ export const LocalityComparison: React.FC<LocalityComparisonProps> = ({
               {/* Large Score */}
               <div className="py-2 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
                 <span className="md:hidden text-xs text-slate-400">AreaScore:</span>
-                <span className="text-3xl font-extrabold text-slate-900 dark:text-white font-mono">
-                  {loc.scores.overallScore}
-                  <span className="text-xs text-slate-400 font-normal"> / 100</span>
-                </span>
+                {loc.scores.overallScore !== null ? (
+                  <span className="text-3xl font-extrabold text-slate-900 dark:text-white font-mono">
+                    {loc.scores.overallScore}
+                    <span className="text-xs text-slate-400 font-normal"> / 100</span>
+                  </span>
+                ) : (
+                  <div className="flex flex-col items-end sm:items-start">
+                    <span className="text-sm font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                      <AlertTriangle className="w-3.5 h-3.5" /> Withheld
+                    </span>
+                    <span className="text-[11px] text-slate-400">Low Coverage (&lt;50%)</span>
+                  </div>
+                )}
               </div>
 
               {/* Profiles */}
               <div className="space-y-2 py-3 border-b border-slate-100 dark:border-slate-800 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-500">FamilyScore:</span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{loc.profileScores.familyScore}</span>
+                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                    {loc.profileScores.familyScore !== null ? loc.profileScores.familyScore : <span className="text-slate-400 font-normal text-[11px]">Unrated</span>}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">StudentScore:</span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{loc.profileScores.studentScore}</span>
+                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                    {loc.profileScores.studentScore !== null ? loc.profileScores.studentScore : <span className="text-slate-400 font-normal text-[11px]">Unrated</span>}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">CommuterScore:</span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{loc.profileScores.commuterScore}</span>
+                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                    {loc.profileScores.commuterScore !== null ? loc.profileScores.commuterScore : <span className="text-slate-400 font-normal text-[11px]">Unrated</span>}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">InvestorScore:</span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{loc.profileScores.investorScore}</span>
+                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                    {loc.profileScores.investorScore !== null ? loc.profileScores.investorScore : <span className="text-slate-400 font-normal text-[11px]">Unrated</span>}
+                  </span>
                 </div>
               </div>
 
@@ -179,25 +196,36 @@ export const LocalityComparison: React.FC<LocalityComparisonProps> = ({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Confidence:</span>
-                  <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{loc.scores.confidenceScore}%</span>
+                  <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                    {loc.scores.confidenceScore !== null ? `${loc.scores.confidenceScore}%` : 'Unrated'}
+                  </span>
                 </div>
               </div>
 
               {/* Category Breakdown */}
               <div className="space-y-2 py-3 text-xs">
                 {categories.map((c) => {
-                  const score = (loc.scores.categoryScores as any)[c.key] || 0;
+                  const score = (loc.scores.categoryScores as any)[c.key] as number | null | undefined;
+                  const hasScore = score !== null && score !== undefined;
                   return (
                     <div key={c.key} className="space-y-0.5">
                       <div className="flex justify-between text-[11px]">
                         <span className="text-slate-500 truncate max-w-[140px]">{c.name}</span>
-                        <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{score}</span>
+                        <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                          {hasScore ? score : <span className="text-slate-400 font-normal text-[10px]">N/A</span>}
+                        </span>
                       </div>
                       <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-emerald-500"
-                          style={{ width: `${score}%` }}
-                        />
+                        {hasScore ? (
+                          <div
+                            className={`h-full rounded-full ${
+                              score >= 80 ? 'bg-emerald-500' : score >= 65 ? 'bg-blue-500' : score >= 50 ? 'bg-amber-500' : 'bg-rose-500'
+                            }`}
+                            style={{ width: `${score}%` }}
+                          />
+                        ) : (
+                          <div className="h-full w-full bg-slate-200/60 dark:bg-slate-700/60 border-r border-dashed border-slate-400" />
+                        )}
                       </div>
                     </div>
                   );

@@ -61,8 +61,17 @@ export const PrintableReportModal: React.FC<PrintableReportModalProps> = ({ loca
               </p>
             </div>
             <div className="flex items-baseline gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-              <span className="text-3xl font-black font-mono text-slate-900">{locality.scores.overallScore}</span>
-              <span className="text-xs text-slate-500 font-bold">/ 100 AreaScore</span>
+              {locality.scores.overallScore !== null ? (
+                <>
+                  <span className="text-3xl font-black font-mono text-slate-900">{locality.scores.overallScore}</span>
+                  <span className="text-xs text-slate-500 font-bold">/ 100 AreaScore</span>
+                </>
+              ) : (
+                <div className="flex flex-col">
+                  <span className="text-sm font-black text-amber-700">Score Withheld</span>
+                  <span className="text-[10px] text-slate-500 font-medium">Coverage &lt; 50%</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -72,21 +81,29 @@ export const PrintableReportModal: React.FC<PrintableReportModalProps> = ({ loca
           <div>
             <div className="text-slate-500 font-semibold">Data Coverage</div>
             <div className="text-base font-bold font-mono text-slate-900">{locality.scores.coverageScore}%</div>
-            <div className="text-[10px] text-slate-400">22 of 24 indicators</div>
+            <div className="text-[10px] text-slate-400">
+              {Math.round((locality.scores.coverageScore / 100) * 24)} of 24 indicators
+            </div>
           </div>
           <div>
             <div className="text-slate-500 font-semibold">Data Confidence</div>
-            <div className="text-base font-bold font-mono text-slate-900">{locality.scores.confidenceScore}%</div>
+            <div className="text-base font-bold font-mono text-slate-900">
+              {locality.scores.confidenceScore !== null ? `${locality.scores.confidenceScore}%` : 'Unrated'}
+            </div>
             <div className="text-[10px] text-slate-400">Statutory & SCADA tier</div>
           </div>
           <div>
             <div className="text-slate-500 font-semibold">FamilyScore Profile</div>
-            <div className="text-base font-bold font-mono text-emerald-700">{locality.profileScores.familyScore} / 100</div>
+            <div className="text-base font-bold font-mono text-emerald-700">
+              {locality.profileScores.familyScore !== null ? `${locality.profileScores.familyScore} / 100` : 'Unrated'}
+            </div>
             <div className="text-[10px] text-slate-400">Edu & Health weighted</div>
           </div>
           <div>
             <div className="text-slate-500 font-semibold">StudentScore Profile</div>
-            <div className="text-base font-bold font-mono text-blue-700">{locality.profileScores.studentScore} / 100</div>
+            <div className="text-base font-bold font-mono text-blue-700">
+              {locality.profileScores.studentScore !== null ? `${locality.profileScores.studentScore} / 100` : 'Unrated'}
+            </div>
             <div className="text-[10px] text-slate-400">Campus & Transit weighted</div>
           </div>
         </div>
@@ -137,17 +154,25 @@ export const PrintableReportModal: React.FC<PrintableReportModalProps> = ({ loca
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {locality.indicators.map((ind) => (
-                  <tr key={ind.id}>
-                    <td className="px-3 py-2 font-semibold text-slate-900">{ind.name}</td>
-                    <td className="px-3 py-2 font-mono font-bold">{ind.score}</td>
-                    <td className="px-3 py-2 text-slate-600">
-                      {ind.metrics[0]?.label}: <strong>{ind.metrics[0]?.value} {ind.metrics[0]?.unit || ''}</strong>
+                {locality.indicators.length > 0 ? (
+                  locality.indicators.map((ind) => (
+                    <tr key={ind.id}>
+                      <td className="px-3 py-2 font-semibold text-slate-900">{ind.name}</td>
+                      <td className="px-3 py-2 font-mono font-bold">{ind.score}</td>
+                      <td className="px-3 py-2 text-slate-600">
+                        {ind.metrics[0]?.label}: <strong>{ind.metrics[0]?.value} {ind.metrics[0]?.unit || ''}</strong>
+                      </td>
+                      <td className="px-3 py-2 text-slate-500">{ind.sources[0]?.organization || ind.sources[0]?.name}</td>
+                      <td className="px-3 py-2 font-mono text-[10px] text-slate-400">{ind.metrics[0]?.date}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-4 text-center text-slate-400 italic">
+                      Sensor telemetry and indicator ingestion currently in progress for this ward.
                     </td>
-                    <td className="px-3 py-2 text-slate-500">{ind.sources[0]?.organization || ind.sources[0]?.name}</td>
-                    <td className="px-3 py-2 font-mono text-[10px] text-slate-400">{ind.metrics[0]?.date}</td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>

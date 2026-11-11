@@ -237,51 +237,64 @@ Provide an evidence-grounded analysis. Also at the very end of your response, ou
   let fallbackAnswer = '';
   let fallbackSpoken = '';
 
+  const formatScore = (val: number | null | undefined, suffix = '/100', fallback = 'N/A (Pending Telemetry)') =>
+    val !== null && val !== undefined ? `${val}${suffix}` : fallback;
+
+  const scoreStr = primaryLoc.scores.overallScore !== null ? `${primaryLoc.scores.overallScore}/100` : 'Withheld (Insufficient Evidence Coverage)';
+  const confStr = primaryLoc.scores.confidenceScore !== null ? `${primaryLoc.scores.confidenceScore}%` : 'Unrated';
+  const freshStr = primaryLoc.scores.dataFreshnessDays !== null ? `${primaryLoc.scores.dataFreshnessDays} days` : 'Pending sensor update';
+
   if (language === 'hi') {
     fallbackAnswer = `### ${primaryLoc.hindiName || primaryLoc.name} (${primaryLoc.city}) का सांख्यिकीय विश्लेषण\n\n`;
-    fallbackAnswer += `**एरियास्कोर (AreaScore): ${primaryLoc.scores.overallScore}/100** (डेटा कवरेज: ${primaryLoc.scores.coverageScore}%, विश्वसनीयता: ${primaryLoc.scores.confidenceScore}%)\n\n`;
+    fallbackAnswer += `**एरियास्कोर (AreaScore): ${scoreStr}** (डेटा कवरेज: ${primaryLoc.scores.coverageScore}%, विश्वसनीयता: ${confStr})\n\n`;
     fallbackAnswer += `#### मुख्य खूबियां:\n`;
     primaryLoc.strengths.forEach((s) => (fallbackAnswer += `• ${s}\n`));
     fallbackAnswer += `\n#### सावधानियां एवं समस्याएं:\n`;
     primaryLoc.cautions.forEach((c) => (fallbackAnswer += `• ${c}\n`));
     fallbackAnswer += `\n#### श्रेणीगत प्रदर्शन:\n`;
-    fallbackAnswer += `• कनेक्टिविटी: ${primaryLoc.scores.categoryScores.connectivity}/100\n`;
-    fallbackAnswer += `• स्वास्थ्य सेवाएं: ${primaryLoc.scores.categoryScores.healthcare}/100\n`;
-    fallbackAnswer += `• शिक्षा: ${primaryLoc.scores.categoryScores.education}/100\n`;
-    fallbackAnswer += `• पर्यावरण: ${primaryLoc.scores.categoryScores.environment}/100\n`;
-    fallbackAnswer += `• नागरिक सुविधाएं: ${primaryLoc.scores.categoryScores.civicInfrastructure}/100\n`;
+    fallbackAnswer += `• कनेक्टिविटी: ${formatScore(primaryLoc.scores.categoryScores.connectivity)}\n`;
+    fallbackAnswer += `• स्वास्थ्य सेवाएं: ${formatScore(primaryLoc.scores.categoryScores.healthcare)}\n`;
+    fallbackAnswer += `• शिक्षा: ${formatScore(primaryLoc.scores.categoryScores.education)}\n`;
+    fallbackAnswer += `• पर्यावरण: ${formatScore(primaryLoc.scores.categoryScores.environment)}\n`;
+    fallbackAnswer += `• नागरिक सुविधाएं: ${formatScore(primaryLoc.scores.categoryScores.civicInfrastructure)}\n`;
 
-    fallbackSpoken = `${primaryLoc.hindiName || primaryLoc.name} का एरियास्कोर ${primaryLoc.scores.overallScore} है। कनेक्टिविटी ${primaryLoc.scores.categoryScores.connectivity} और स्वास्थ्य स्कोर ${primaryLoc.scores.categoryScores.healthcare} दर्ज किया गया है।`;
+    fallbackSpoken = primaryLoc.scores.overallScore !== null
+      ? `${primaryLoc.hindiName || primaryLoc.name} का एरियास्कोर ${primaryLoc.scores.overallScore} है। कनेक्टिविटी ${formatScore(primaryLoc.scores.categoryScores.connectivity, '')} दर्ज है।`
+      : `${primaryLoc.hindiName || primaryLoc.name} का एरियास्कोर डेटा कवरेज 50% से कम होने के कारण सुरक्षित रखा गया है।`;
   } else if (language === 'hinglish') {
     fallbackAnswer = `### ${primaryLoc.name} (${primaryLoc.city}) ka Evidence-Backed Analysis\n\n`;
-    fallbackAnswer += `**Official AreaScore: ${primaryLoc.scores.overallScore}/100** (Data Coverage: ${primaryLoc.scores.coverageScore}%, Confidence: ${primaryLoc.scores.confidenceScore}%)\n\n`;
+    fallbackAnswer += `**Official AreaScore: ${scoreStr}** (Data Coverage: ${primaryLoc.scores.coverageScore}%, Confidence: ${confStr})\n\n`;
     fallbackAnswer += `#### Verified Khasiyat (Strengths):\n`;
     primaryLoc.strengths.forEach((s) => (fallbackAnswer += `• ${s}\n`));
     fallbackAnswer += `\n#### Cautions & Bottlenecks:\n`;
     primaryLoc.cautions.forEach((c) => (fallbackAnswer += `• ${c}\n`));
     fallbackAnswer += `\n#### Category Performance:\n`;
-    fallbackAnswer += `• Connectivity: ${primaryLoc.scores.categoryScores.connectivity}/100\n`;
-    fallbackAnswer += `• Healthcare: ${primaryLoc.scores.categoryScores.healthcare}/100\n`;
-    fallbackAnswer += `• Education: ${primaryLoc.scores.categoryScores.education}/100\n`;
-    fallbackAnswer += `• Environment: ${primaryLoc.scores.categoryScores.environment}/100\n`;
-    fallbackAnswer += `• Civic Infrastructure: ${primaryLoc.scores.categoryScores.civicInfrastructure}/100\n`;
+    fallbackAnswer += `• Connectivity: ${formatScore(primaryLoc.scores.categoryScores.connectivity)}\n`;
+    fallbackAnswer += `• Healthcare: ${formatScore(primaryLoc.scores.categoryScores.healthcare)}\n`;
+    fallbackAnswer += `• Education: ${formatScore(primaryLoc.scores.categoryScores.education)}\n`;
+    fallbackAnswer += `• Environment: ${formatScore(primaryLoc.scores.categoryScores.environment)}\n`;
+    fallbackAnswer += `• Civic Infrastructure: ${formatScore(primaryLoc.scores.categoryScores.civicInfrastructure)}\n`;
 
-    fallbackSpoken = `${primaryLoc.name} ka overall AreaScore ${primaryLoc.scores.overallScore} out of 100 hai. Yahan connectivity ka score ${primaryLoc.scores.categoryScores.connectivity} aur healthcare ${primaryLoc.scores.categoryScores.healthcare} hai.`;
+    fallbackSpoken = primaryLoc.scores.overallScore !== null
+      ? `${primaryLoc.name} ka overall AreaScore ${primaryLoc.scores.overallScore} out of 100 hai.`
+      : `${primaryLoc.name} ka overall AreaScore insufficient empirical coverage ki wajah se withheld hai.`;
   } else {
     fallbackAnswer = `### Evidence-Grounded Analysis for ${primaryLoc.name} (${primaryLoc.city})\n\n`;
-    fallbackAnswer += `**Official AreaScore: ${primaryLoc.scores.overallScore}/100** (Data Coverage: ${primaryLoc.scores.coverageScore}%, Confidence: ${primaryLoc.scores.confidenceScore}%, Freshness: ${primaryLoc.scores.dataFreshnessDays} days)\n\n`;
+    fallbackAnswer += `**Official AreaScore: ${scoreStr}** (Data Coverage: ${primaryLoc.scores.coverageScore}%, Confidence: ${confStr}, Freshness: ${freshStr})\n\n`;
     fallbackAnswer += `#### Verified Key Strengths:\n`;
     primaryLoc.strengths.forEach((s) => (fallbackAnswer += `• ${s}\n`));
     fallbackAnswer += `\n#### Documented Cautions & Bottlenecks:\n`;
     primaryLoc.cautions.forEach((c) => (fallbackAnswer += `• ${c}\n`));
     fallbackAnswer += `\n#### Category Performance:\n`;
-    fallbackAnswer += `• Connectivity & Transit: ${primaryLoc.scores.categoryScores.connectivity}/100\n`;
-    fallbackAnswer += `• Healthcare Accessibility: ${primaryLoc.scores.categoryScores.healthcare}/100\n`;
-    fallbackAnswer += `• Education Access: ${primaryLoc.scores.categoryScores.education}/100\n`;
-    fallbackAnswer += `• Environmental Intelligence: ${primaryLoc.scores.categoryScores.environment}/100\n`;
-    fallbackAnswer += `• Civic Infrastructure: ${primaryLoc.scores.categoryScores.civicInfrastructure}/100\n`;
+    fallbackAnswer += `• Connectivity & Transit: ${formatScore(primaryLoc.scores.categoryScores.connectivity)}\n`;
+    fallbackAnswer += `• Healthcare Accessibility: ${formatScore(primaryLoc.scores.categoryScores.healthcare)}\n`;
+    fallbackAnswer += `• Education Access: ${formatScore(primaryLoc.scores.categoryScores.education)}\n`;
+    fallbackAnswer += `• Environmental Intelligence: ${formatScore(primaryLoc.scores.categoryScores.environment)}\n`;
+    fallbackAnswer += `• Civic Infrastructure: ${formatScore(primaryLoc.scores.categoryScores.civicInfrastructure)}\n`;
 
-    fallbackSpoken = `${primaryLoc.name} has an official AreaScore of ${primaryLoc.scores.overallScore} with ${primaryLoc.scores.coverageScore}% data coverage. Connectivity is rated at ${primaryLoc.scores.categoryScores.connectivity} and healthcare accessibility at ${primaryLoc.scores.categoryScores.healthcare}.`;
+    fallbackSpoken = primaryLoc.scores.overallScore !== null
+      ? `${primaryLoc.name} has an official AreaScore of ${primaryLoc.scores.overallScore} with ${primaryLoc.scores.coverageScore}% data coverage.`
+      : `${primaryLoc.name} has its composite AreaScore currently withheld due to evidence coverage falling below the 50% threshold.`;
   }
 
   return {
