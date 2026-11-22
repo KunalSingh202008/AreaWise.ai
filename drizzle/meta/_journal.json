@@ -8,6 +8,13 @@
       "when": 1794389107406,
       "tag": "0000_great_hercules",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794389107407,
+      "tag": "0001_priority1_remediations",
+      "breakpoints": true
     }
   ]
 }

@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { LanguageProvider } from './context/LanguageContext';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
@@ -22,6 +22,7 @@ import { Locality } from './types';
 import { VARANASI_LOCALITIES } from '../server/data';
 
 function AppContent() {
+  const { user } = useAuth();
   const [localities, setLocalities] = useState<Locality[]>(VARANASI_LOCALITIES);
   const [selectedLocalityId, setSelectedLocalityId] = useState<string>('sigra');
   const [activeTab, setActiveTab] = useState<
@@ -179,7 +180,7 @@ function AppContent() {
           />
         )}
 
-        {activeTab === 'admin' && (
+        {activeTab === 'admin' && user?.role === 'admin' && (
           <AdminDashboard
             localities={localities}
             onRefreshData={refreshLocalities}

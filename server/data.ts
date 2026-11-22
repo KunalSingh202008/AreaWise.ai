@@ -495,7 +495,7 @@ export const RAW_LOCALITIES: Omit<Locality, 'scores' | 'profileScores'>[] = [
       'Sigra is a bustling central locality situated adjacent to Varanasi Junction (Cantt). Known for the Dr. Sampurnanand Sports Stadium, IP Sigra Mall, and dense retail avenues, it offers unparalleled transit convenience and sports access, balanced against moderate traffic and commercial noise during business hours.',
     hindiDescription:
       'सिगरा वाराणसी कैंट जंक्शन के निकट स्थित एक प्रमुख व्यापारिक इलाका है। डॉ. सम्पूर्णानंद स्पोर्ट्स स्टेडियम और आईपी मॉल के कारण यह खेल व खरीदारी का मुख्य केंद्र है।',
-    previewImage: '/src/assets/images/sigra_locality_preview_1794054120651.jpg',
+    previewImage: '/assets/images/sigra_locality_preview_1794054120651.jpg',
     strengths: [
       'Transit proximity: 1.8 km to Varanasi Cantt Railway Station and Inter-State Bus Terminal (ISBT)',
       'Direct walking access to newly renovated Dr. Sampurnanand Sports Complex (Olympic-size pool, indoor arena)',
@@ -600,7 +600,7 @@ export const RAW_LOCALITIES: Omit<Locality, 'scores' | 'profileScores'>[] = [
       'Lanka is the cultural and intellectual powerhouse of Varanasi, anchored by the iconic Lion Gate of Banaras Hindu University (BHU). It combines world-class higher education, the massive Sir Sunderlal and Trauma Centre hospital complexes, and lush green university grounds.',
     hindiDescription:
       'लंका काशी हिंदू विश्वविद्यालय (BHU) के सिंहद्वार पर स्थित एक प्रमुख सांस्कृतिक और शैक्षणिक इलाका है, जहां सर सुंदरलाल अस्पताल और ट्रॉमा सेंटर जैसी शीर्ष स्वास्थ्य सुविधाएं हैं।',
-    previewImage: '/src/assets/images/lanka_locality_preview_1794054121378.jpg',
+    previewImage: '/assets/images/lanka_locality_preview_1794054121378.jpg',
     strengths: [
       'Top-tier educational hub: BHU campus, IIT BHU, faculties of Medicine, Science, and Arts within 300m',
       'Unsurpassed healthcare: Sir Sunderlal Hospital (1,500+ beds) and Apex Trauma Centre provide immediate specialized care',
@@ -671,7 +671,7 @@ export const RAW_LOCALITIES: Omit<Locality, 'scores' | 'profileScores'>[] = [
       'Mahmoorganj is widely considered one of Varanasi’s most coveted upscale residential colonies. Characterized by wide, tree-shaded avenues, low vehicular through-traffic, reputable CBSE schools, and specialized private healthcare clinics.',
     hindiDescription:
       'महमूरगंज वाराणसी के सबसे प्रतिष्ठित और शांत आवासीय इलाकों में से एक है, जिसमें चौड़ी सड़कें, कम प्रदूषण और निजी क्लीनिकों की भरपूर सुविधा है।',
-    previewImage: '/src/assets/images/mahmoorganj_locality_preview_1794054121380.jpg',
+    previewImage: '/assets/images/mahmoorganj_locality_preview_1794054121380.jpg',
     strengths: [
       'Quiet, low-noise residential environment (53 dBA daytime average, significantly lower than Sigra)',
       'High property title clarity with strong presence of approved private colonies and RERA compliant boutique apartments',
@@ -724,7 +724,7 @@ export const RAW_LOCALITIES: Omit<Locality, 'scores' | 'profileScores'>[] = [
       'Bhelupur is a strategically positioned central district housing the historic Bhelupur Water Works, Jain temples, and key commercial avenues linking Kamachha to Ravindrapuri. High municipal water reliability and central accessibility.',
     hindiDescription:
       'भेलूपुर वाराणसी का मुख्य नागरिक एवं पेयजल आपूर्ति केंद्र है, जो कामाच्छा से रवींद्रपुरी के बीच स्थित है।',
-    previewImage: '/src/assets/images/sigra_locality_preview_1794054120651.jpg',
+    previewImage: '/assets/images/sigra_locality_preview_1794054120651.jpg',
     strengths: [
       'Top municipal water infrastructure: Bhelupur Water Treatment Plant guarantees consistent pressure',
       'Central connectivity: 10 minutes to Cantt Station and 8 minutes to Assi Ghat',
@@ -776,7 +776,7 @@ export const RAW_LOCALITIES: Omit<Locality, 'scores' | 'profileScores'>[] = [
       'Assi is the celebrated cultural gateway to Varanasi riverfront, renowned for Assi Ghat, morning yoga, vibrant cafe culture, and artisan bookshops. Highly coveted by writers, researchers, and cultural enthusiasts.',
     hindiDescription:
       'अस्सी वाराणसी का सुप्रसिद्ध गंगा तटवर्ती इलाका है, जो सुबह-ए-बनारस, साहित्यिक गतिविधियों और कलात्मक जीवनशैली के लिए जाना जाता है।',
-    previewImage: '/src/assets/images/lanka_locality_preview_1794054121378.jpg',
+    previewImage: '/assets/images/lanka_locality_preview_1794054121378.jpg',
     strengths: [
       'Direct walking access to Ganga promenade and Assi Ghat cultural amphitheater',
       'Vibrant international lifestyle: Organic cafes, bakeries, yoga centers, and art ateliers',
@@ -828,7 +828,7 @@ export const RAW_LOCALITIES: Omit<Locality, 'scores' | 'profileScores'>[] = [
       'Durgakund is situated around the historic 18th-century Durga Temple reservoir, linking Lanka to Bhelupur. Offers top private clinics, sweets markets, and immediate proximity to Sankat Mochan and Tulsi Manas temples.',
     hindiDescription:
       'दुर्गाकुंड ऐतिहासिक दुर्गा मंदिर और कुंड के आसपास बसा प्रमुख इलाका है, जो लंका और भेलूपुर को जोड़ता है।',
-    previewImage: '/src/assets/images/lanka_locality_preview_1794054121378.jpg',
+    previewImage: '/assets/images/lanka_locality_preview_1794054121378.jpg',
     strengths: [
       'Proximity to Heritage Hospitals and specialized diagnostic clinics on Sankat Mochan road',
       'Walking access to premier religious and cultural landmarks (Durga Kund, Sankat Mochan)',
@@ -863,7 +863,7 @@ export const RAW_LOCALITIES: Omit<Locality, 'scores' | 'profileScores'>[] = [
       'Shivpur is a high-growth northern growth node along NH-31, featuring Shivpur Railway Station, modern residential plotted colonies, and direct access to Lal Bahadur Shastri International Airport (Babatpur).',
     hindiDescription:
       'शिवपुर वाराणसी का उत्तरी विकास क्षेत्र है जो बाबतपुर एयरपोर्ट रोड और एनएच-31 पर स्थित है।',
-    previewImage: '/src/assets/images/hero_varanasi_urban_1794054119447.jpg',
+    previewImage: '/assets/images/hero_varanasi_urban_1794054119447.jpg',
     strengths: [
       'Fastest airport access: 14 km direct expressway route to Babatpur Airport',
       'Affordable plotted land and modern gated residential township projects',
@@ -899,7 +899,7 @@ export const RAW_LOCALITIES: Omit<Locality, 'scores' | 'profileScores'>[] = [
       'Sarnath is an internationally revered cultural and archaeological heritage zone. Boasts the lowest ambient noise, highest green tree canopy cover (over 38%), ancient stupas, Buddhist monasteries, and peaceful residential layouts.',
     hindiDescription:
       'सारनाथ विश्व प्रसिद्ध बौद्ध तीर्थस्थल है। यह वाराणसी का सबसे हरा-भरा और शांत इलाका है जहां धमेख स्तूप और डियर पार्क स्थित हैं।',
-    previewImage: '/src/assets/images/hero_varanasi_urban_1794054119447.jpg',
+    previewImage: '/assets/images/hero_varanasi_urban_1794054119447.jpg',
     strengths: [
       'Superb environmental quality: Cleanest air pocket in Varanasi urban district (AQI ~95-110 average)',
       'Abundant green public spaces: ASI protected gardens, Deer Park, Tibetan Monastery grounds',
@@ -935,7 +935,7 @@ export const RAW_LOCALITIES: Omit<Locality, 'scores' | 'profileScores'>[] = [
       'Varanasi Cantonment is celebrated for its wide avenues, stately banyan trees, pristine military upkeep, upscale five-star hotels (Taj Ganges, Clark’s), and tranquil bungalows.',
     hindiDescription:
       'छावनी क्षेत्र अपनी चौड़ी सड़कों, घने पेड़ों, ताज गंगेज जैसे लग्जरी होटलों और शांत माहौल के लिए प्रसिद्ध है।',
-    previewImage: '/src/assets/images/hero_varanasi_urban_1794054119447.jpg',
+    previewImage: '/assets/images/hero_varanasi_urban_1794054119447.jpg',
     strengths: [
       'Unrivalled cleanliness and civic upkeep supervised by the Cantonment Board',
       'Immediate access to Varanasi Cantt Railway Station (less than 1.2 km)',
@@ -971,7 +971,7 @@ export const RAW_LOCALITIES: Omit<Locality, 'scores' | 'profileScores'>[] = [
       'Pandeypur is an active junction locality connecting Cantt to Sarnath and Azamgarh. Houses Deen Dayal Upadhyay Government Hospital and ESIC Hospital.',
     hindiDescription:
       'पाण्डेयपुर वाराणसी का प्रमुख उत्तर-पूर्वी जंक्शन है जहां पंडित दीनदयाल उपाध्याय जिला अस्पताल और ईएसआईसी अस्पताल स्थित हैं।',
-    previewImage: '/src/assets/images/sigra_locality_preview_1794054120651.jpg',
+    previewImage: '/assets/images/sigra_locality_preview_1794054120651.jpg',
     strengths: [
       'Two major multi-hundred-bed public hospitals within 600m (Deen Dayal & ESIC)',
       'Vibrant local market with affordable vegetable mandis and household utilities',
@@ -1006,7 +1006,7 @@ export const RAW_LOCALITIES: Omit<Locality, 'scores' | 'profileScores'>[] = [
       'Orderly Bazaar is the seat of Varanasi administrative apparatus, adjacent to the District Court (Kachehri) and Police Commissionerate. Benefits from high civic surveillance and stable power.',
     hindiDescription:
       'अर्दली बाजार कलेक्ट्रेट और कचहरी के समीप स्थित प्रशासनिक क्षेत्र है जहां सरकारी अधिकारियों के आवास व न्यायिक सेवाएं केंद्रित हैं।',
-    previewImage: '/src/assets/images/mahmoorganj_locality_preview_1794054121380.jpg',
+    previewImage: '/assets/images/mahmoorganj_locality_preview_1794054121380.jpg',
     strengths: [
       'Highest police surveillance and administrative priority in the district',
       'Immediate access to legal, financial, and revenue documentation services',
@@ -1040,7 +1040,7 @@ export const RAW_LOCALITIES: Omit<Locality, 'scores' | 'profileScores'>[] = [
       'Godowlia is the beating heart of classical Varanasi, leading directly to Kashi Vishwanath Corridor and Dashashwamedh Ghat. Features cobble-stone pedestrianized smart walkways and round-the-clock cultural energy.',
     hindiDescription:
       'गोदौलिया प्राचीन बनारस का केंद्र है, जो काशी विश्वनाथ कॉरिडोर और दशाश्वमेध घाट का मुख्य प्रवेश द्वार है।',
-    previewImage: '/src/assets/images/lanka_locality_preview_1794054121378.jpg',
+    previewImage: '/assets/images/lanka_locality_preview_1794054121378.jpg',
     strengths: [
       'Unsurpassed walking proximity to Kashi Vishwanath Dham and evening Ganga Aarti',
       'Round-the-clock vibrant markets with famous banarasi paan, chaat, and textiles',
@@ -1077,7 +1077,7 @@ export const RAW_LOCALITIES: Omit<Locality, 'scores' | 'profileScores'>[] = [
       'Ramnagar is situated on the eastern bank of the Ganga, famous for Ramnagar Fort and traditional Dussehra. Civic sensor telemetry and ambient monitors are currently uninstalled.',
     hindiDescription:
       'रामनगर गंगा के पूर्वी तट पर स्थित ऐतिहासिक कस्बा है। यहां नगर निगम की स्वचालित जल एवं वायु गुणवत्ता सेंसर मॉनिटरिंग अभी स्थापित की जा रही है।',
-    previewImage: '/src/assets/images/lanka_locality_preview_1794054121378.jpg',
+    previewImage: '/assets/images/lanka_locality_preview_1794054121378.jpg',
     strengths: [
       'Ganga riverfront heritage: Direct proximity to 18th-century Ramnagar Fort museum',
       'Affordable peri-urban land parcels compared to trans-Ganga city core',
@@ -1250,7 +1250,7 @@ export const INITIAL_COMMUNITY_REPORTS: CommunityReport[] = [
     description: 'During continuous rainfall exceeding 30mm, low-lying bend near Rath Yatra faces water accumulation up to 1.5 feet due to silt accumulation.',
     lat: 25.3160,
     lng: 82.9865,
-    imageUrl: '/src/assets/images/sigra_locality_preview_1794054120651.jpg',
+    imageUrl: '/assets/images/sigra_locality_preview_1794054120651.jpg',
     status: 'action_taken',
     submittedBy: 'Ashish Tripathi (Resident, 8 yrs)',
     submittedAt: '2026-10-12T14:20:00Z',
@@ -1266,7 +1266,7 @@ export const INITIAL_COMMUNITY_REPORTS: CommunityReport[] = [
     description: 'E-rickshaws parking 3-deep at the BHU Main Lion Gate entrance bottleneck incoming ambulances heading toward Trauma Centre.',
     lat: 25.2804,
     lng: 83.0002,
-    imageUrl: '/src/assets/images/lanka_locality_preview_1794054121378.jpg',
+    imageUrl: '/assets/images/lanka_locality_preview_1794054121378.jpg',
     status: 'action_taken',
     submittedBy: 'Dr. Priya Maurya (Resident Scholar)',
     submittedAt: '2026-10-22T09:15:00Z',
@@ -1282,7 +1282,7 @@ export const INITIAL_COMMUNITY_REPORTS: CommunityReport[] = [
     description: 'Two consecutive street lamps have flickered off for the past 5 days, leaving a 70m stretch in darkness after 7:30 PM.',
     lat: 25.3072,
     lng: 82.9802,
-    imageUrl: '/src/assets/images/mahmoorganj_locality_preview_1794054121380.jpg',
+    imageUrl: '/assets/images/mahmoorganj_locality_preview_1794054121380.jpg',
     status: 'under_review',
     submittedBy: 'Sanjay Agarwal (Trader)',
     submittedAt: '2026-11-04T18:40:00Z',
@@ -1297,7 +1297,7 @@ export const INITIAL_COMMUNITY_REPORTS: CommunityReport[] = [
     description: 'High tourist tea-cup and packaging disposal fills the two municipal compactors by 6:00 PM, causing spillover on stairs.',
     lat: 25.2898,
     lng: 83.0062,
-    imageUrl: '/src/assets/images/lanka_locality_preview_1794054121378.jpg',
+    imageUrl: '/assets/images/lanka_locality_preview_1794054121378.jpg',
     status: 'action_taken',
     submittedBy: 'Meera Sen (Student, BHU)',
     submittedAt: '2026-11-03T19:30:00Z',

@@ -61,7 +61,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
         {/* Background Image with Scrim */}
         <div className="absolute inset-0 z-0">
           <img
-            src="/src/assets/images/hero_varanasi_urban_1794054119447.jpg"
+            src="/assets/images/hero_varanasi_urban_1794054119447.jpg"
             alt="Varanasi Urban Landscape"
             className="w-full h-full object-cover object-center opacity-35 mix-blend-luminosity"
             referrerPolicy="no-referrer"

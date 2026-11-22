@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DataSourceStatus, Locality, CommunityReport } from '../../types';
-import { useAuth } from '../../context/AuthContext';
+import { authenticatedFetch } from '../../context/AuthContext';
 import {
   Upload,
   CheckCircle2,
@@ -19,7 +19,6 @@ interface AdminDashboardProps {
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ localities, onRefreshData }) => {
-  const { user, switchRole } = useAuth();
   const [activeTab, setActiveTab] = useState<'weights' | 'import' | 'moderation' | 'sources' | 'logs'>('weights');
 
   // Weights Config
@@ -49,38 +48,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ localities, onRe
   const [importLocality, setImportLocality] = useState(localities[0]?.id || 'sigra');
   const [importCategory, setImportCategory] = useState('civic');
   const [csvContent, setCsvContent] = useState(
-    `name,lat,lng,subcategory,address
-"Sigra Smart Municipal Dispensary",25.3188,82.9862,"Public Health Post","Lane 2, Sigra"
-"Vidyapeeth Metro Feeder Terminal",25.3155,82.9820,"Transit Stop","Station Link Road"
-"Mahmoorganj Green Community Kiosk",25.3082,82.9798,"Civic Help Desk","Colony Gate 1"`
+    'name,lat,lng,subcategory,address'
   );
   const [importResult, setImportResult] = useState<any | null>(null);
   const [isImporting, setIsImporting] = useState(false);
 
   useEffect(() => {
     // Fetch weights
-    fetch('/api/v1/admin/scoring-weights')
-      .then((res) => res.json())
+    authenticatedFetch('/api/v1/admin/scoring-weights')
+      .then((res) => {
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        return res.json();
+      })
       .then((data) => {
         if (data && typeof data === 'object') setWeights(data);
       })
       .catch(console.error);
 
     // Fetch data sources
-    fetch('/api/v1/admin/data-sources')
-      .then((res) => res.json())
+    authenticatedFetch('/api/v1/admin/data-sources')
+      .then((res) => {
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        return res.json();
+      })
       .then((data) => setSources(data || []))
       .catch(console.error);
 
     // Fetch reports for moderation
     fetch('/api/v1/community/reports')
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        return res.json();
+      })
       .then((data) => setReports(data.reports || []))
       .catch(console.error);
 
     // Fetch audit logs
-    fetch('/api/v1/admin/audit-logs')
-      .then((res) => res.json())
+    authenticatedFetch('/api/v1/admin/audit-logs')
+      .then((res) => {
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        return res.json();
+      })
       .then((data) => setAuditLogs(data || []))
       .catch(console.error);
   }, []);
@@ -96,7 +104,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ localities, onRe
     setIsUpdatingWeights(true);
     setWeightSuccessMsg('');
     try {
-      const res = await fetch('/api/v1/admin/scoring-weights', {
+      const res = await authenticatedFetch('/api/v1/admin/scoring-weights', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(weights),
@@ -116,13 +124,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ localities, onRe
 
   const handleModerateReport = async (reportId: string, status: string) => {
     try {
-      const res = await fetch(`/api/v1/community/reports/${reportId}/moderate`, {
+      const res = await authenticatedFetch(`/api/v1/community/reports/${reportId}/moderate`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status,
           officialResponse: moderationNote[reportId] || 'Reviewed and recorded in municipal civic register.',
-          moderator: user?.name || 'Senior Civic Auditor',
         }),
       });
       if (res.ok) {
@@ -161,7 +168,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ localities, onRe
     }
 
     try {
-      const res = await fetch('/api/v1/admin/import-dataset', {
+      const res = await authenticatedFetch('/api/v1/admin/import-dataset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -200,23 +207,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ localities, onRe
           </h1>
         </div>
 
-        {/* User Role Switcher */}
-        <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-lg text-xs">
-          <span className="text-slate-500 font-medium pl-1">Role:</span>
-          {(['citizen', 'student', 'consultant', 'admin'] as const).map((r) => (
-            <button
-              key={r}
-              onClick={() => switchRole(r)}
-              className={`px-2.5 py-1 rounded font-semibold capitalize transition-colors ${
-                user?.role === r
-                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-              }`}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Tabs */}

@@ -1,4 +1,5 @@
-import { db, pool } from './index.ts';
+import { assertIsolatedTestDatabase } from '../../scripts/test-db-config';
+import { db } from './index.ts';
 import {
   cities,
   localities,
@@ -23,6 +24,7 @@ import { METHODOLOGY_VERSION, activeWeights, MIN_COVERAGE_THRESHOLD, MIN_WEIGHT_
 import { sql } from 'drizzle-orm';
 
 export async function seedDatabase() {
+  assertIsolatedTestDatabase();
   console.log('--- Starting AreaWise AI Phase 2B Seed ---');
 
   // 1. Seed City (Varanasi Pilot)
@@ -339,7 +341,7 @@ export async function seedDatabase() {
       details: {
         methodology: METHODOLOGY_VERSION,
         seededLocalities: RAW_LOCALITIES.length,
-        spatialSupport: 'PostGIS 3.6',
+        fixture: 'Legacy Varanasi fixture for isolated integration tests',
       },
     })
     .onConflictDoNothing();

@@ -12,9 +12,10 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, selectedLocality }) => {
-  const { user, switchRole, setLanguagePreference } = useAuth();
+  const { user, login, logout, setLanguagePreference } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { language, setLanguage, t } = useLanguage();
+  const [authError, setAuthError] = useState('');
   const [isLangMenuOpen, setIsLangMenuOpen] = useState(false);
 
   const handleLangChange = (lang: SupportedLanguage) => {
@@ -184,7 +185,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, selecte
           </button>
 
           {/* Admin Mode Toggle */}
-          {user?.role === 'admin' ? (
+          {user?.role === 'admin' && (
             <button
               onClick={() => setActiveTab('admin')}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap ${
@@ -196,14 +197,26 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, selecte
               <Shield className="w-3.5 h-3.5" />
               Admin
             </button>
-          ) : (
-            <button
-              onClick={() => switchRole('admin')}
-              className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 underline whitespace-nowrap hidden sm:inline"
-            >
-              Admin
-            </button>
           )}
+          <button
+            onClick={async () => {
+              setAuthError('');
+              try {
+                if (user) {
+                  await logout();
+                  setActiveTab('landing');
+                } else {
+                  await login();
+                }
+              } catch {
+                setAuthError(user ? 'Sign-out failed. Try again.' : 'Google sign-in failed. Try again.');
+              }
+            }}
+            className="text-xs font-semibold whitespace-nowrap"
+          >
+            {user ? 'Sign out' : 'Sign in'}
+          </button>
+          {authError && <p role="alert" className="absolute top-full right-4 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-red-600">{authError}</p>}
 
           {/* Primary CTA */}
           <button

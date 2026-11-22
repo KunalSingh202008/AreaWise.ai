@@ -1,16 +1,15 @@
+import 'dotenv/config';
+import { randomUUID } from 'node:crypto';
+import { access } from 'node:fs/promises';
+import { requireAdmin } from './server/auth';
+import { pool } from './src/db';
 import express, { Request, Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import dotenv from 'dotenv';
 import {
-  VARANASI_LOCALITIES,
-  INITIAL_COMMUNITY_REPORTS,
   DATA_SOURCES,
-  resolveLocationByCoordinates,
-  haversineDistanceMeters,
 } from './server/data';
 import {
-  getAllLocalitiesFromDb,
   getLocalityByIdFromDb,
   searchLocalitiesInDb,
   resolveLocationSpatial,
@@ -25,18 +24,9 @@ import {
 import {
   getAuditLogsFromDb,
 } from './src/db/repositories/auditLogRepository.ts';
-import {
-  saveAIConversationAndMessages,
-} from './src/db/repositories/aiConversationRepository.ts';
-import {
-  getActiveScoringWeightsFromDb,
-  updateScoringWeightsInDb,
-} from './src/db/repositories/scoringMethodologyRepository.ts';
-import { calculateAreaScore, calculateProfileScores, updateWeights, activeWeights } from './server/scoring';
+import { getActiveScoringWeightsFromDb } from './src/db/repositories/scoringMethodologyRepository.ts';
 import { askAreaWiseAI } from './server/ai';
-import { Locality, CommunityReport } from './src/types';
-
-dotenv.config();
+import { Locality } from './src/types';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -45,33 +35,40 @@ const app = express();
 
 function getPort(): number {
   const portArgIndex = process.argv.indexOf('--port');
-  if (portArgIndex !== -1 && process.argv[portArgIndex + 1]) {
-    const parsed = parseInt(process.argv[portArgIndex + 1], 10);
-    if (!isNaN(parsed)) return parsed;
+  const rawPort = portArgIndex === -1 ? process.env.PORT ?? '3000' : process.argv[portArgIndex + 1];
+  const port = Number(rawPort);
+  if (!rawPort || !/^\d+$/.test(rawPort) || port < 1 || port > 65535) {
+    throw new Error('Set PORT or --port to an integer between 1 and 65535.');
   }
-  // In development, dev server must always bind to port 3000
-  if (process.env.NODE_ENV !== 'production') {
-    return 3000;
-  }
-  return process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+  return port;
 }
 
-const PORT = getPort();
+app.disable('x-powered-by');
+app.use((_req, res, next) => {
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+app.use('/api', (req, res, next) => {
+  const requestId = randomUUID();
+  const start = performance.now();
+  res.set('X-Request-Id', requestId).set('Cache-Control', 'no-store');
+  res.on('finish', () => {
+    if (process.env.NODE_ENV === 'test') return;
+    console.info(JSON.stringify({
+      event: 'http.request',
+      requestId,
+      method: req.method,
+      route: req.route?.path ?? 'api',
+      status: res.statusCode,
+      durationMs: Math.round(performance.now() - start),
+    }));
+  });
+  next();
+});
+app.use('/api/v1/admin', requireAdmin);
+app.use(express.json({ limit: '128kb' }));
 
-app.use(express.json({ limit: '10mb' }));
-
-// In-memory runtime state
-let localities: Locality[] = JSON.parse(JSON.stringify(VARANASI_LOCALITIES));
-let communityReports: CommunityReport[] = JSON.parse(JSON.stringify(INITIAL_COMMUNITY_REPORTS));
-let auditLogs: { id: string; action: string; actor: string; timestamp: string; details: string }[] = [
-  {
-    id: 'log-1',
-    action: 'SYSTEM_BOOTSTRAP',
-    actor: 'AreaWise Core Engine',
-    timestamp: '2026-11-06T00:00:00Z',
-    details: 'Initialized Varanasi pilot data with full Varanasi-wide localities and geospatial spatial resolver.',
-  },
-];
 
 // ==========================================
 // API ROUTES (/api/v1/...)
@@ -79,9 +76,10 @@ let auditLogs: { id: string; action: string; actor: string; timestamp: string; d
 
 // 1. Dynamic Location Resolution (Coordinates or Landmark) via PostGIS
 app.post('/api/v1/locations/resolve', async (req: Request, res: Response) => {
-  const { lat, lng, label } = req.body;
+  const { lat, lng, label } = req.body ?? {};
 
-  if (typeof lat !== 'number' || typeof lng !== 'number') {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) ||
+      (label !== undefined && (typeof label !== 'string' || label.length > 150))) {
     return res.status(400).json({
       error: 'Invalid coordinates',
       message: 'Latitude and longitude numeric values are required.',
@@ -101,26 +99,21 @@ app.post('/api/v1/locations/resolve', async (req: Request, res: Response) => {
     return res.json(resolved);
   } catch (error) {
     console.error('Error in /api/v1/locations/resolve:', error);
-    const fallback = resolveLocationByCoordinates(lat, lng, label);
-    return res.json(fallback);
+    return res.status(503).json({ error: 'Location resolution is temporarily unavailable.' });
   }
 });
 
 // 2. Location Search & Discovery (PostgreSQL / PostGIS backed)
 app.get('/api/v1/locations/search', async (req: Request, res: Response) => {
-  const query = ((req.query.q as string) || '').trim();
-  const city = ((req.query.city as string) || '').trim();
+  const { q = '', city: cityQuery = '' } = req.query;
+  if (typeof q !== 'string' || typeof cityQuery !== 'string' || q.length > 150 || cityQuery.length > 100) {
+    return res.status(400).json({ error: 'Use one locality query and one city filter.' });
+  }
+  const query = q.trim();
+  const city = cityQuery.trim();
 
   try {
-    let results: Locality[];
-    if (query) {
-      results = await searchLocalitiesInDb(query, city);
-    } else {
-      results = await getAllLocalitiesFromDb();
-      if (city) {
-        results = results.filter((l) => l.city.toLowerCase().includes(city.toLowerCase()));
-      }
-    }
+    const results = await searchLocalitiesInDb(query, city);
 
     return res.json({
       total: results.length,
@@ -200,13 +193,18 @@ app.get('/api/v1/locations/:id/facilities', async (req: Request, res: Response) 
       return res.status(404).json({ error: 'Locality Not Found' });
     }
 
-    const category = req.query.category as string;
-    const radiusMeters = req.query.radius ? parseInt(req.query.radius as string, 10) : 3000;
+    const { category, radius = '3000' } = req.query;
+    const radiusMeters = Number(radius);
+    if (typeof radius !== 'string' || !/^\d+$/.test(radius) || radiusMeters < 1 || radiusMeters > 5000 ||
+        (category !== undefined && (typeof category !== 'string' ||
+          !['all', 'healthcare', 'education', 'transport', 'parks', 'shopping', 'civic'].includes(category)))) {
+      return res.status(400).json({ error: 'Use a radius from 1 to 5000 metres and a valid category.' });
+    }
     const facilitiesList = await getFacilitiesSpatial(
       locality.center.lat,
       locality.center.lng,
       radiusMeters,
-      category
+      category as string | undefined
     );
 
     return res.json(facilitiesList);
@@ -238,9 +236,11 @@ app.get('/api/v1/locations/:id/map', async (req: Request, res: Response) => {
 
 // 8. Multi-Locality Comparison (PostgreSQL backed)
 app.post('/api/v1/comparisons', async (req: Request, res: Response) => {
-  const { ids } = req.body;
-  if (!Array.isArray(ids) || ids.length < 2) {
-    return res.status(400).json({ error: 'Provide at least 2 locality IDs to compare.' });
+  const { ids } = req.body ?? {};
+  if (!Array.isArray(ids) || ids.length < 2 || ids.length > 3 ||
+      !ids.every((id) => typeof id === 'string' && id.length > 0 && id.length <= 150) ||
+      new Set(ids.map((id) => id.toLowerCase())).size !== ids.length) {
+    return res.status(400).json({ error: 'Provide 2 or 3 distinct locality IDs to compare.' });
   }
 
   try {
@@ -250,7 +250,7 @@ app.post('/api/v1/comparisons', async (req: Request, res: Response) => {
       if (loc) matched.push(loc);
     }
 
-    if (matched.length < 2) {
+    if (matched.length !== ids.length) {
       return res.status(404).json({ error: 'One or more localities could not be found for comparison.' });
     }
 
@@ -291,43 +291,42 @@ app.post('/api/v1/comparisons', async (req: Request, res: Response) => {
 // 9. AreaWise AI Assistant RAG (Multilingual & Spoken Script Support)
 app.post('/api/v1/ai/ask', async (req: Request, res: Response) => {
   try {
-    const { prompt, localityId, comparisonIds, language = 'en', chatHistory } = req.body;
-    if (!prompt || typeof prompt !== 'string') {
-      return res.status(400).json({ error: 'A prompt is required.' });
+    const { prompt, localityId, comparisonIds = [], language = 'en' } = req.body ?? {};
+    if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 2500 ||
+        !Array.isArray(comparisonIds) || comparisonIds.length > 3 ||
+        (localityId !== undefined && typeof localityId !== 'string') ||
+        !['en', 'hi', 'hinglish'].includes(language)) {
+      return res.status(400).json({ error: 'Provide a valid question, localities and language.' });
+    }
+
+    const ids = [...(localityId ? [localityId] : []), ...comparisonIds];
+    if (!ids.length || !ids.every((id) => typeof id === 'string' && id.length > 0 && id.length <= 150)) {
+      return res.status(400).json({ error: 'Select at least one valid locality.' });
+    }
+
+    const uniqueIds = [...new Set<string>(ids.map((id) => id.toLowerCase()))];
+    if (uniqueIds.length > 3) {
+      return res.status(400).json({ error: 'Select no more than three localities.' });
+    }
+    const evidence = await Promise.all(uniqueIds.map(getLocalityByIdFromDb));
+    if (evidence.some((locality) => !locality)) {
+      return res.status(404).json({ error: 'Evidence is unavailable for one or more selected localities.' });
     }
 
     const aiResult = await askAreaWiseAI({
-      prompt,
+      prompt: prompt.trim(),
       localityId,
       comparisonIds,
       language,
-      chatHistory,
-      activeLocalitiesList: localities,
+      activeLocalitiesList: evidence.filter((locality): locality is Locality => locality !== null),
     });
-
-    // Persist conversation session and messages into PostgreSQL
-    try {
-      await saveAIConversationAndMessages({
-        conversationId: req.body.conversationId,
-        localityId,
-        comparisonIds,
-        language,
-        prompt,
-        answer: aiResult.answer,
-        spokenScript: aiResult.spokenScript,
-        citations: aiResult.citations,
-        warningNote: aiResult.warningNote,
-      });
-    } catch (persistErr) {
-      console.error('Failed to persist AI conversation in DB:', persistErr);
-    }
 
     return res.json(aiResult);
   } catch (error: any) {
     console.error('Error in /api/v1/ai/ask:', error);
     return res.status(500).json({
       error: 'AI Assistance Unavailable',
-      message: error?.message || 'Internal failure during evidence synthesis.',
+      message: 'The evidence engine could not complete the request.',
     });
   }
 });
@@ -393,9 +392,10 @@ app.post('/api/v1/community/reports/:id/vote', async (req: Request, res: Respons
 });
 
 // 13. Admin: Moderate Community Report (PostgreSQL backed with transactions)
-app.patch('/api/v1/community/reports/:id/moderate', async (req: Request, res: Response) => {
+app.patch('/api/v1/community/reports/:id/moderate', requireAdmin, async (req: Request, res: Response) => {
   try {
-    const { status, officialResponse, moderator } = req.body;
+    const { status, officialResponse } = req.body;
+    const moderator: string = res.locals.adminUid;
     const updated = await moderateReportInDb(req.params.id, status, officialResponse, moderator);
     return res.json(updated);
   } catch (error: any) {
@@ -421,82 +421,14 @@ app.get('/api/v1/admin/scoring-weights', async (_req: Request, res: Response) =>
   }
 });
 
-app.post('/api/v1/admin/scoring-weights', async (req: Request, res: Response) => {
-  try {
-    const newWeights = req.body;
-    const moderator = req.body.moderator || 'Admin System';
-    const updated = await updateScoringWeightsInDb(newWeights, moderator);
-
-    return res.json({
-      weights: updated,
-      recalculatedCount: 13,
-    });
-  } catch (error) {
-    console.error('Error updating scoring weights:', error);
-    return res.status(500).json({ error: 'Failed to update scoring weights' });
-  }
+app.post('/api/v1/admin/scoring-weights', (_req, res) => {
+  res.status(409).json({ error: 'Apply reviewed weight changes through a new scoring methodology version.' });
 });
 
 // 16. Admin: Dataset Ingestion / CSV Validator
-app.post('/api/v1/admin/import-dataset', (req: Request, res: Response) => {
-  const { localityId, category, records, sourceName } = req.body;
-
-  if (!localityId || !Array.isArray(records) || records.length === 0) {
-    return res.status(400).json({ error: 'Valid localityId and non-empty records array required.' });
-  }
-
-  const locality = localities.find((l) => l.id === localityId);
-  if (!locality) {
-    return res.status(404).json({ error: 'Locality not found.' });
-  }
-
-  let validCount = 0;
-  let skippedDuplicates = 0;
-
-  for (const item of records) {
-    if (item.name && item.lat && item.lng) {
-      const duplicate = locality.facilities.some(
-        (f) => f.name.toLowerCase() === item.name.toLowerCase()
-      );
-      if (duplicate) {
-        skippedDuplicates++;
-        continue;
-      }
-
-      locality.facilities.push({
-        id: `f-imp-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        name: item.name,
-        category: category || item.category || 'civic',
-        subcategory: item.subcategory || 'Imported Civic Point',
-        lat: parseFloat(item.lat),
-        lng: parseFloat(item.lng),
-        distanceMeters: haversineDistanceMeters(locality.center, {
-          lat: parseFloat(item.lat),
-          lng: parseFloat(item.lng),
-        }),
-        address: item.address || `${locality.name}, ${locality.city}`,
-        source: sourceName || 'Admin CSV Batch Ingestion',
-        verificationStatus: 'verified',
-        lastVerifiedDate: new Date().toISOString().split('T')[0],
-      });
-      validCount++;
-    }
-  }
-
-  auditLogs.unshift({
-    id: `log-${Date.now()}`,
-    action: 'DATASET_IMPORTED',
-    actor: 'Dataset Administrator',
-    timestamp: new Date().toISOString(),
-    details: `Imported ${validCount} valid facility points into ${locality.name} (Skipped ${skippedDuplicates} duplicate records).`,
-  });
-
-  return res.json({
-    success: true,
-    localityId,
-    importedFacilities: validCount,
-    skippedDuplicates,
-    currentFacilityTotal: locality.facilities.length,
+app.post('/api/v1/admin/import-dataset', (_req: Request, res: Response) => {
+  return res.status(501).json({
+    error: 'Dataset ingestion requires a persistent importer with source verification.',
   });
 });
 
@@ -514,7 +446,38 @@ app.get('/api/v1/admin/audit-logs', async (_req: Request, res: Response) => {
 // ==========================================
 // STATIC FILES & VITE DEV INTEGRATION
 // ==========================================
+app.get('/api/v1/health', (_req, res) => {
+  res.json({ status: 'ok' });
+});
+
+app.get('/api/v1/ready', async (_req, res) => {
+  try {
+    const { rows: [row] } = await pool.query<{ has_schema: boolean }>(`
+      SELECT PostGIS_Version(), to_regclass('public.localities') IS NOT NULL AS has_schema
+    `);
+    if (row?.has_schema) return res.json({ status: 'ready' });
+  } catch {
+    // Readiness failing does not affect liveness or expose connection details.
+  }
+  return res.status(503).json({ status: 'unavailable' });
+});
+
+app.use('/api', (_req, res) => {
+  res.status(404).json({ error: 'API route not found' });
+});
+
+app.use('/api', (error: unknown, _req: Request, res: Response, _next: express.NextFunction) => {
+  const status = (error as { status?: number }).status;
+  if (status === 400 || status === 413) {
+    return res.status(status).json({ error: status === 400 ? 'Invalid JSON body' : 'Request body too large' });
+  }
+  console.error('Unhandled API error:', error);
+  return res.status(500).json({ error: 'Internal server error' });
+});
+
 async function startServer() {
+  const port = getPort();
+  const host = process.env.HOST || '0.0.0.0';
   const isDev = process.env.NODE_ENV !== 'production';
 
   if (isDev) {
@@ -525,15 +488,37 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
-    app.get('*', (_req: Request, res: Response) => {
-      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+    const dist = path.resolve(__dirname, 'dist');
+    await access(path.join(dist, 'index.html'));
+    app.use(express.static(dist, { index: false }));
+    app.get('/', (_req, res) => res.sendFile(path.join(dist, 'index.html')));
+    app.get('*', (req: Request, res: Response) => {
+      const acceptsHtml = req.get('accept')?.split(',').some(
+        (type) => type.split(';')[0].trim().toLowerCase() === 'text/html' && !/;\s*q=0(?:\.0+)?\s*(?:;|$)/i.test(type)
+      );
+      if (!acceptsHtml || path.extname(req.path) || /^\/assets(?:\/|$)/.test(req.path)) {
+        return res.sendStatus(404);
+      }
+      return res.sendFile(path.join(dist, 'index.html'));
     });
   }
 
-  app.listen(PORT, () => {
-    console.log(`[AreaWise AI Server] running on http://0.0.0.0:${PORT} (Mode: ${process.env.NODE_ENV || 'development'})`);
+  const server = app.listen(port, host, () => {
+    console.log(`[AreaWise AI Server] running on http://${host}:${port} (Mode: ${process.env.NODE_ENV || 'development'})`);
   });
+  server.on('error', reportStartupFailure);
+  const shutdown = () => {
+    server.close(() => {
+      pool.end().finally(() => process.exit());
+    });
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
 }
 
-startServer();
+function reportStartupFailure(error: unknown) {
+  console.error('AreaWise AI could not start. For production, run npm run build before npm start.', error);
+  process.exitCode = 1;
+}
+
+startServer().catch(reportStartupFailure);
