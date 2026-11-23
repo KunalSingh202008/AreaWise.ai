@@ -151,7 +151,7 @@ export async function seedDatabase() {
         cityId: 'varanasi',
         name: grounded.name,
         hindiName: grounded.hindiName,
-        pincode: grounded.pincode,
+        pincode: grounded.pincode ?? '',
         tagline: grounded.tagline,
         hindiTagline: grounded.hindiTagline,
         description: grounded.description,
@@ -170,7 +170,7 @@ export async function seedDatabase() {
         set: {
           name: grounded.name,
           hindiName: grounded.hindiName,
-          pincode: grounded.pincode,
+          pincode: grounded.pincode ?? '',
           tagline: grounded.tagline,
           description: grounded.description,
         },

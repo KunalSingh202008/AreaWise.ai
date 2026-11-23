@@ -17,6 +17,8 @@ import {
   Mic,
   TrendingUp,
 } from 'lucide-react';
+import { PlaceSearch } from '../geography/PlaceSearch';
+import { PlaceProvenance } from '../geography/PlaceProvenance';
 import { PropertyMarketTrends } from './PropertyMarketTrends';
 
 interface LocalityDashboardProps {
@@ -26,7 +28,6 @@ interface LocalityDashboardProps {
   onOpenCompare: (selectedIds?: string[]) => void;
   onOpenAssistantWithPrompt?: (prompt: string) => void;
   onOpenReportModal: () => void;
-  onResolveCoordinates?: (lat: number, lng: number, label?: string) => void;
 }
 
 export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
@@ -36,7 +37,6 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
   onOpenCompare,
   onOpenAssistantWithPrompt,
   onOpenReportModal,
-  onResolveCoordinates,
 }) => {
   const { isLocalitySaved, toggleSaveLocality, user, setPreferredProfile } = useAuth();
   const { language, t } = useLanguage();
@@ -44,9 +44,10 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
   const [activeProfile, setActiveProfile] = useState<'overall' | 'family' | 'student' | 'commuter' | 'investor'>(
     user?.preferredProfile || 'overall'
   );
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
   const [selectedFacility, setSelectedFacility] = useState<Facility | null>(null);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(locality.indicators[0]?.id || null);
-  const [facilityRadius, setFacilityRadius] = useState<number>(3000);
 
   const isSaved = isLocalitySaved(locality.id);
 
@@ -109,7 +110,6 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
   ];
 
   // Filter facilities by radius
-  const filteredFacilities = locality.facilities.filter((f) => f.distanceMeters <= facilityRadius);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -120,7 +120,7 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
             {/* Quick Locality Switcher */}
             <div className="flex flex-wrap items-center gap-2 mb-1">
               <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
-                Varanasi Locality:
+                Recently viewed
               </span>
               <div className="flex flex-wrap items-center gap-1.5 p-1 bg-white/10 dark:bg-slate-800/80 rounded-xl backdrop-blur-sm border border-white/10">
                 {allLocalities.slice(0, 7).map((l) => (
@@ -144,10 +144,10 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
                 {language === 'hi' && locality.hindiName ? locality.hindiName : locality.name}
               </h1>
               <span className="text-sm font-semibold text-slate-300">
-                {locality.city}, {locality.state} · PIN {locality.pincode}
+                {[...new Set([locality.city, locality.state].filter(Boolean)), locality.pincode && `PIN ${locality.pincode}`].filter(Boolean).join(' · ')}
               </span>
               <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono">
-                {locality.center.lat.toFixed(4)}°N, {locality.center.lng.toFixed(4)}°E
+                {locality.center.lat.toFixed(4)}, {locality.center.lng.toFixed(4)}
               </span>
               {locality.isCustomResolved && (
                 <span className="text-[11px] px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
@@ -164,7 +164,16 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
           {/* Action Controls */}
           <div className="flex flex-wrap items-center gap-2.5 shrink-0">
             <button
-              onClick={() => toggleSaveLocality(locality.id)}
+              disabled={!user || !locality.geography || saving}
+              aria-pressed={isSaved}
+              title={!user ? "Sign in to save areas" : undefined}
+              onClick={async () => {
+                setSaveError('');
+                setSaving(true);
+                try { await toggleSaveLocality(locality.id); }
+                catch (error) { setSaveError(error instanceof Error ? error.message : 'Could not save place.'); }
+                finally { setSaving(false); }
+              }}
               className={`px-3.5 py-2 text-xs font-bold rounded-xl flex items-center gap-1.5 border transition-all ${
                 isSaved
                   ? 'bg-emerald-500 text-white border-emerald-400 shadow-md'
@@ -176,6 +185,7 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
             </button>
 
             <button
+              disabled={!locality.geography}
               onClick={() => onOpenCompare([locality.id])}
               className="px-3.5 py-2 text-xs font-bold rounded-xl bg-white/10 text-white border border-white/20 hover:bg-white/20 flex items-center gap-1.5 transition-all"
             >
@@ -192,12 +202,13 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
             </button>
 
             <button
+              disabled={!locality.geography}
               onClick={() => {
                 if (onOpenAssistantWithPrompt) {
                   onOpenAssistantWithPrompt(
                     language === 'hi'
                       ? `${locality.hindiName || locality.name} का विस्तृत सांख्यिकीय विश्लेषण बताएं।`
-                      : `Give me a detailed evidence breakdown for ${locality.name}, Varanasi.`
+                      : `Give me a detailed evidence breakdown for ${locality.name}.`
                   );
                 }
               }}
@@ -210,7 +221,11 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
         </div>
       </div>
 
-      {/* 2. Primary Score Card + Data Integrity Strip */}
+      {saveError && <p role="alert" className="text-sm text-rose-600">{saveError}</p>}
+      <PlaceSearch onSelect={(place) => onSelectLocality(place.id)} />
+      <PlaceProvenance locality={locality} />
+
+      {/* Score summary and data reliability */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Score Summary Box (Glassmorphic) */}
         <div className="lg:col-span-1 p-6 rounded-3xl bg-white dark:bg-slate-900/80 backdrop-blur-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between space-y-6">
@@ -268,7 +283,7 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
                 <div className="font-bold flex items-center gap-1.5 mb-1">
                   <AlertTriangle className="w-4 h-4" /> Score Withheld
                 </div>
-                Evidence coverage ({locality.scores.coverageScore}%) is below the mandatory 50% threshold. AreaWise strictly avoids generating deceptive composite scores for unobserved areas.
+                The available observations do not meet the requirements for this score.
               </div>
             )}
 
@@ -335,7 +350,7 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
                 {locality.scores.confidenceScore !== null ? `${locality.scores.confidenceScore}%` : 'Unrated'}
               </div>
               <div className="text-[11px] text-slate-400 mt-1">
-                {locality.scores.confidenceScore !== null ? 'Statutory CPCB & SCADA tier' : 'No source verification'}
+                {locality.scores.confidenceScore !== null ? 'Source-tier confidence' : 'No score evidence'}
               </div>
             </div>
 
@@ -348,7 +363,7 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
                   <span className="text-base text-slate-400 font-sans">Pending Data</span>
                 )}
               </div>
-              <div className="text-[11px] text-slate-400 mt-1">Avg observation recency</div>
+              <div className="text-[11px] text-slate-400 mt-1">Latest observation</div>
             </div>
           </div>
 
@@ -413,39 +428,19 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
               {t.dashboard.mapTitle}
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Interactive OpenStreetMap GIS layer. Click anywhere on the map to analyze custom coordinates!
+              Nearby facility points with straight-line distances.
             </p>
           </div>
 
-          {/* Radius Filter Slider */}
-          <div className="flex items-center gap-3 text-xs shrink-0">
-            <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400 font-semibold">
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span>Radius Filter:</span>
-              <select
-                value={facilityRadius}
-                onChange={(e) => setFacilityRadius(Number(e.target.value))}
-                className="bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-xs px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 font-bold"
-              >
-                <option value={1000}>1.0 km</option>
-                <option value={2000}>2.0 km</option>
-                <option value={3000}>3.0 km</option>
-                <option value={5000}>5.0 km</option>
-              </select>
-            </div>
 
-            <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">
-              {filteredFacilities.length} Facilities in buffer
-            </span>
-          </div>
         </div>
 
         <InteractiveLocalityMap
           center={locality.center}
           bounds={locality.bounds}
           localityName={locality.name}
-          facilities={filteredFacilities}
-          onSelectFacility={(fac) => setSelectedFacility(fac)}
+          facilities={locality.facilities}
+          onSelectFacility={setSelectedFacility}
           className="h-[520px] w-full"
         />
 
@@ -461,7 +456,8 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
             </div>
             <div className="flex items-center gap-3">
               <span className="px-2.5 py-1 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold text-[11px]">
-                {selectedFacility.verificationStatus.replace('_', ' ')}: {selectedFacility.source}
+                {selectedFacility.sourceUrl ? <a href={selectedFacility.sourceUrl} target="_blank" rel="noreferrer" className="underline">{selectedFacility.source}</a> : selectedFacility.source}
+                {' · Service details unverified'}
               </span>
               <button
                 onClick={() => setSelectedFacility(null)}
@@ -475,7 +471,7 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
       </div>
 
       {/* 4. Detailed Empirical Indicators Drilldown */}
-      <div className="space-y-4">
+      {locality.indicators.length > 0 && <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-slate-900 dark:text-white">
             {t.dashboard.indicatorsTitle}
@@ -552,7 +548,7 @@ export const LocalityDashboard: React.FC<LocalityDashboardProps> = ({
             );
           })}
         </div>
-      </div>
+      </div>}
 
       {/* 5. Missing Data Transparency Warning Banner */}
       {locality.missingDataNotes && locality.missingDataNotes.length > 0 && (

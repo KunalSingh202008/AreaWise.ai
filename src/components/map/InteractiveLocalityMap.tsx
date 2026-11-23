@@ -3,6 +3,21 @@ import L from 'leaflet';
 import { Facility, Coordinates, CommunityReport } from '../../types';
 import { Layers, Crosshair, Filter } from 'lucide-react';
 
+const NO_REPORTS: CommunityReport[] = [];
+
+function mapPopup(title: string, ...details: string[]) {
+  const content = document.createElement('div');
+  const heading = document.createElement('strong');
+  heading.textContent = title;
+  content.append(heading);
+  for (const detail of details.filter(Boolean)) {
+    const line = document.createElement('div');
+    line.textContent = detail;
+    content.append(line);
+  }
+  return content;
+}
+
 interface InteractiveLocalityMapProps {
   center: Coordinates;
   bounds?: [number, number][];
@@ -19,7 +34,7 @@ export const InteractiveLocalityMap: React.FC<InteractiveLocalityMapProps> = ({
   bounds,
   localityName,
   facilities,
-  communityReports = [],
+  communityReports = NO_REPORTS,
   selectedCategory: initialCategory = 'all',
   onSelectFacility,
   className = 'h-[460px] w-full',
@@ -47,9 +62,9 @@ export const InteractiveLocalityMap: React.FC<InteractiveLocalityMapProps> = ({
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
     // Standard OpenStreetMap tiles
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      attribution: '© OpenStreetMap contributors',
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
     }).addTo(map);
 
     const markersGroup = L.layerGroup().addTo(map);
@@ -71,6 +86,7 @@ export const InteractiveLocalityMap: React.FC<InteractiveLocalityMapProps> = ({
 
     if (polygonLayerRef.current) {
       map.removeLayer(polygonLayerRef.current);
+      polygonLayerRef.current = null;
     }
 
     if (bounds && bounds.length > 2) {
@@ -93,22 +109,13 @@ export const InteractiveLocalityMap: React.FC<InteractiveLocalityMapProps> = ({
 
     markersGroup.clearLayers();
 
-    // Locality Center Anchor Marker
-    const centerIcon = L.divIcon({
-      className: 'custom-center-marker',
-      html: `
-        <div style="background-color: #0f172a; color: white; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; border: 2px solid #10b981; box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 4px; white-space: nowrap;">
-          <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #10b981;"></span>
-          ${localityName} Center
-        </div>
-      `,
-      iconSize: [120, 30],
-      iconAnchor: [60, 15],
-    });
-
-    L.marker([center.lat, center.lng], { icon: centerIcon })
-      .bindPopup(`<strong>${localityName} Geographic Center</strong><br/>Lat: ${center.lat.toFixed(4)}, Lng: ${center.lng.toFixed(4)}`)
+    L.circleMarker([center.lat, center.lng], { radius: 7, color: '#047857', weight: 3, fillOpacity: 0.8 })
+      .bindPopup(mapPopup(localityName, `${center.lat.toFixed(4)}, ${center.lng.toFixed(4)}`))
       .addTo(markersGroup);
+
+    L.circle([center.lat, center.lng], {
+      radius: selectedRadius, color: '#047857', weight: 1, fillOpacity: 0.03, interactive: false,
+    }).addTo(markersGroup);
 
     // Filter facilities
     const filtered = facilities.filter((f) => {
@@ -141,18 +148,7 @@ export const InteractiveLocalityMap: React.FC<InteractiveLocalityMapProps> = ({
 
       const marker = L.marker([facility.lat, facility.lng], { icon });
 
-      const popupHtml = `
-        <div style="font-family: inherit; font-size: 12px; line-height: 1.4; max-width: 220px;">
-          <div style="font-weight: 700; color: #0f172a; margin-bottom: 2px;">${facility.name}</div>
-          <div style="color: #64748b; font-size: 11px; margin-bottom: 6px;">${facility.subcategory} · ${facility.distanceMeters}m away</div>
-          <div style="font-size: 11px; color: #334155; margin-bottom: 6px;">${facility.address}</div>
-          <div style="padding: 2px 6px; background: #f1f5f9; border-radius: 4px; font-size: 10px; color: #475569;">
-            Source: ${facility.source}
-          </div>
-        </div>
-      `;
-
-      marker.bindPopup(popupHtml);
+      marker.bindPopup(mapPopup(facility.name, `${facility.subcategory} · ${facility.distanceMeters} m`, facility.address, facility.source));
       marker.on('click', () => {
         if (onSelectFacility) onSelectFacility(facility);
       });
@@ -175,14 +171,8 @@ export const InteractiveLocalityMap: React.FC<InteractiveLocalityMapProps> = ({
         });
 
         const marker = L.marker([report.lat, report.lng], { icon: reportIcon });
-        marker.bindPopup(`
-          <div style="font-family: inherit; font-size: 12px; max-width: 220px;">
-            <div style="font-weight: 700; color: #9f1239; margin-bottom: 2px;">Civic Report: ${report.category}</div>
-            <div style="font-weight: 600; color: #0f172a; font-size: 11px;">${report.title}</div>
-            <div style="color: #64748b; font-size: 11px; margin-top: 4px;">Status: <strong>${report.status.replace('_', ' ')}</strong></div>
-            <div style="color: #94a3b8; font-size: 10px; margin-top: 2px;">${report.upvotes} resident confirmations</div>
-          </div>
-        `);
+        marker.bindPopup(mapPopup(report.title, report.category.replaceAll('_', ' '),
+          report.status.replaceAll('_', ' '), `${report.upvotes} confirmations`));
         marker.addTo(markersGroup);
       });
     }
@@ -207,6 +197,7 @@ export const InteractiveLocalityMap: React.FC<InteractiveLocalityMapProps> = ({
           ].map((cat) => (
             <button
               key={cat.id}
+              aria-pressed={activeCategory === cat.id}
               onClick={() => setActiveCategory(cat.id)}
               className={`px-2.5 py-1 rounded-md font-medium whitespace-nowrap transition-colors ${
                 activeCategory === cat.id
@@ -225,6 +216,7 @@ export const InteractiveLocalityMap: React.FC<InteractiveLocalityMapProps> = ({
             <Crosshair className="w-3.5 h-3.5" />
             <span>Radius:</span>
             <select
+              aria-label="Facility radius"
               value={selectedRadius}
               onChange={(e) => setSelectedRadius(Number(e.target.value))}
               className="bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px]"
@@ -238,6 +230,7 @@ export const InteractiveLocalityMap: React.FC<InteractiveLocalityMapProps> = ({
 
           {/* Civic Issues Toggle */}
           <button
+            aria-pressed={showReports}
             onClick={() => setShowReports(!showReports)}
             className={`px-2.5 py-1 rounded-md font-medium transition-colors flex items-center gap-1 ${
               showReports
@@ -252,7 +245,7 @@ export const InteractiveLocalityMap: React.FC<InteractiveLocalityMapProps> = ({
       </div>
 
       {/* Leaflet Map Canvas */}
-      <div ref={mapContainerRef} className={className} />
+      <div ref={mapContainerRef} className={`${className} z-0`} aria-label={`Map of ${localityName}`} />
 
       {/* Map Legend Overlay */}
       <div className="absolute bottom-3 left-3 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 text-[11px] shadow-sm flex items-center gap-3 text-slate-600 dark:text-slate-400">

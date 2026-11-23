@@ -1,12 +1,16 @@
-import { db } from '../index.ts';
+import { randomUUID } from 'node:crypto';
+import { db, pool } from '../index.ts';
 import { communityReports, reportVotes, moderationActions, auditLogs, localities } from '../schema.ts';
-import { eq, desc, and, sql } from 'drizzle-orm';
+import { eq, desc, and, sql, inArray, isNotNull } from 'drizzle-orm';
 import { CommunityReport } from '../../types/index.ts';
 
 export interface ReportFilter {
   localityId?: string;
   category?: string;
   status?: string;
+  published?: boolean;
+  authorUserId?: number;
+  accountsOnly?: boolean;
 }
 
 export interface CreateReportInput {
@@ -18,6 +22,8 @@ export interface CreateReportInput {
   lng?: number;
   imageUrl?: string;
   submittedBy?: string;
+  userId?: number;
+  actorUid?: string;
 }
 
 export async function getCommunityReportsFromDb(filter: ReportFilter = {}): Promise<CommunityReport[]> {
@@ -33,14 +39,18 @@ export async function getCommunityReportsFromDb(filter: ReportFilter = {}): Prom
     conditions.push(eq(communityReports.status, filter.status));
   }
 
+  if (filter.published) conditions.push(inArray(communityReports.status, ['verified', 'action_taken']));
+  if (filter.authorUserId) conditions.push(eq(communityReports.userId, filter.authorUserId));
+  if (filter.published || filter.accountsOnly) conditions.push(isNotNull(communityReports.userId));
+
   const query = db.select({
     id: communityReports.id,
     localityId: communityReports.localityId,
     category: communityReports.category,
     title: communityReports.title,
     description: communityReports.description,
-    lat: communityReports.lat,
-    lng: communityReports.lng,
+    lat: sql<string>`COALESCE(${communityReports.lat}, ${localities.centerLat})`,
+    lng: sql<string>`COALESCE(${communityReports.lng}, ${localities.centerLng})`,
     severity: communityReports.severity,
     status: communityReports.status,
     evidenceUrl: communityReports.evidenceUrl,
@@ -52,7 +62,7 @@ export async function getCommunityReportsFromDb(filter: ReportFilter = {}): Prom
   })
   .from(communityReports)
   .leftJoin(localities, eq(communityReports.localityId, localities.id))
-  .orderBy(desc(communityReports.upvotesCount), desc(communityReports.createdAt));
+  .orderBy(desc(communityReports.upvotesCount), desc(communityReports.createdAt), communityReports.id).limit(100);
 
   const rows = conditions.length > 0
     ? await query.where(and(...conditions))
@@ -65,8 +75,8 @@ export async function getCommunityReportsFromDb(filter: ReportFilter = {}): Prom
     title: r.title,
     category: r.category as any,
     description: r.description,
-    lat: r.lat ? parseFloat(r.lat) : 25.3176,
-    lng: r.lng ? parseFloat(r.lng) : 82.9873,
+    lat: Number(r.lat),
+    lng: Number(r.lng),
     imageUrl: r.evidenceUrl || undefined,
     status: r.status as any,
     submittedBy: r.submittedBy || 'Verified Local Resident',
@@ -83,7 +93,7 @@ export async function createCommunityReportInDb(input: CreateReportInput): Promi
   }
 
   const loc = targetLoc[0];
-  const reportId = `cr-${Date.now()}`;
+  const reportId = `cr-${randomUUID()}`;
   const reportLat = input.lat !== undefined ? input.lat : parseFloat(loc.centerLat);
   const reportLng = input.lng !== undefined ? input.lng : parseFloat(loc.centerLng);
   const submittedBy = (input.submittedBy || 'Verified Local Resident').trim();
@@ -102,7 +112,8 @@ export async function createCommunityReportInDb(input: CreateReportInput): Promi
         severity: 'medium',
         status: 'under_review',
         evidenceUrl: input.imageUrl || null,
-        upvotesCount: 1,
+        userId: input.userId ?? null,
+        upvotesCount: input.userId ? 0 : 1,
         submittedBy,
       })
       .returning();
@@ -118,12 +129,11 @@ export async function createCommunityReportInDb(input: CreateReportInput): Promi
     await tx.insert(auditLogs)
       .values({
         action: 'COMMUNITY_REPORT_SUBMITTED',
-        actor: submittedBy,
+        actor: input.actorUid ?? submittedBy,
         entityType: 'COMMUNITY_REPORT',
         entityId: reportId,
         details: {
           localityId: loc.id,
-          title: input.title.trim(),
           category: input.category,
         },
       });
@@ -247,4 +257,35 @@ export async function moderateReportInDb(
     upvotes: current.report.upvotesCount,
     officialResponse: newResponse || undefined,
   };
+}
+
+export async function confirmPublishedReport(reportId: string, userId: number) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [report] } = await client.query<{ upvotes_count: number }>(`
+      SELECT upvotes_count FROM community_reports
+      WHERE id = $1 AND user_id IS NOT NULL AND user_id <> $2 AND status IN ('verified', 'action_taken')
+      FOR UPDATE
+    `, [reportId, userId]);
+    if (!report) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    const insert = await client.query(`
+      INSERT INTO report_votes (report_id, user_id, vote_type) VALUES ($1, $2, 1)
+      ON CONFLICT (report_id, user_id) WHERE user_id IS NOT NULL DO NOTHING
+    `, [reportId, userId]);
+    if (insert.rowCount) {
+      await client.query('UPDATE community_reports SET upvotes_count = upvotes_count + 1 WHERE id = $1', [reportId]);
+    }
+    await client.query('COMMIT');
+    return { id: reportId, upvotes: report.upvotes_count + (insert.rowCount ?? 0), confirmed: true };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }

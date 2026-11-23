@@ -7,25 +7,21 @@ import express, { Request, Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
-  DATA_SOURCES,
-} from './server/data';
-import {
-  getLocalityByIdFromDb,
-  searchLocalitiesInDb,
-  resolveLocationSpatial,
-  getFacilitiesSpatial,
-} from './src/db/repositories/localityRepository.ts';
-import {
-  getCommunityReportsFromDb,
-  createCommunityReportInDb,
-  voteOnReportInDb,
-  moderateReportInDb,
-} from './src/db/repositories/communityReportRepository.ts';
+  discoverPlaces, getGeographyImports, getPublicLocality,
+  getNearbyCatalogueFacilities, inspectCoordinate,
+} from './server/geography';
+import { getCommunityReportsFromDb } from './src/db/repositories/communityReportRepository';
+import { accountRoutes } from './server/accounts';
+import { communityRoutes, listModerationReports } from './server/community';
+import { HttpError, route } from './server/http';
+import { renderEvidenceBrief } from './server/reports';
+import { billingRoutes, billingWebhook, sandboxBillingSummary } from './server/billing';
+import { workspaceRoutes } from './server/workspaces';
 import {
   getAuditLogsFromDb,
 } from './src/db/repositories/auditLogRepository.ts';
 import { getActiveScoringWeightsFromDb } from './src/db/repositories/scoringMethodologyRepository.ts';
-import { askAreaWiseAI } from './server/ai';
+import { copilotRoutes } from './server/copilot';
 import { Locality } from './src/types';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -47,6 +43,7 @@ app.disable('x-powered-by');
 app.use((_req, res, next) => {
   res.set('X-Content-Type-Options', 'nosniff');
   res.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.set('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
   next();
 });
 app.use('/api', (req, res, next) => {
@@ -67,7 +64,15 @@ app.use('/api', (req, res, next) => {
   next();
 });
 app.use('/api/v1/admin', requireAdmin);
+app.post('/api/v1/billing/webhook/razorpay', ...billingWebhook);
 app.use(express.json({ limit: '128kb' }));
+app.use('/api/v1/billing', billingRoutes);
+app.use('/api/v1/workspaces', workspaceRoutes);
+app.use('/api/v1/me', accountRoutes);
+app.use('/api/v1/ai', copilotRoutes);
+app.use('/api/v1/community', communityRoutes);
+app.get('/api/v1/admin/community/reports', listModerationReports);
+app.get('/api/v1/admin/billing', sandboxBillingSummary);
 
 
 // ==========================================
@@ -86,16 +91,12 @@ app.post('/api/v1/locations/resolve', async (req: Request, res: Response) => {
     });
   }
 
-  // Check bounds within greater Varanasi metropolitan box (25.10 to 25.50 N, 82.80 to 83.20 E)
-  if (lat < 25.10 || lat > 25.50 || lng < 82.80 || lng > 83.20) {
-    return res.status(400).json({
-      error: 'Location outside pilot boundary',
-      message: 'The current pilot covers Varanasi Metropolitan Area (Lat: 25.10°N-25.50°N, Lng: 82.80°E-83.20°E).',
-    });
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return res.status(400).json({ error: 'Coordinates are outside WGS84 limits.' });
   }
 
   try {
-    const resolved = await resolveLocationSpatial(lat, lng, label);
+    const resolved = await inspectCoordinate({ lat, lng }, label);
     return res.json(resolved);
   } catch (error) {
     console.error('Error in /api/v1/locations/resolve:', error);
@@ -113,37 +114,19 @@ app.get('/api/v1/locations/search', async (req: Request, res: Response) => {
   const city = cityQuery.trim();
 
   try {
-    const results = await searchLocalitiesInDb(query, city);
+    const results = await discoverPlaces(query, city);
+    return res.json({ total: results.length, results });
 
-    return res.json({
-      total: results.length,
-      results: results.map((l) => ({
-        id: l.id,
-        name: l.name,
-        hindiName: l.hindiName,
-        city: l.city,
-        state: l.state,
-        pincode: l.pincode,
-        center: l.center,
-        overallScore: l.scores.overallScore,
-        coverageScore: l.scores.coverageScore,
-        confidenceScore: l.scores.confidenceScore,
-        previewImage: l.previewImage,
-        tagline: l.tagline,
-        hindiTagline: l.hindiTagline,
-        isCustomResolved: l.isCustomResolved,
-      })),
-    });
   } catch (error) {
     console.error('Error in /api/v1/locations/search:', error);
-    return res.status(500).json({ error: 'Failed to search localities' });
+    return res.status(503).json({ error: 'The geography catalogue is temporarily unavailable.' });
   }
 });
 
 // 3. Locality Details (PostgreSQL backed)
 app.get('/api/v1/locations/:id', async (req: Request, res: Response) => {
   try {
-    const locality = await getLocalityByIdFromDb(req.params.id);
+    const locality = await getPublicLocality(req.params.id);
     if (!locality) {
       return res.status(404).json({
         error: 'Locality Not Found',
@@ -157,10 +140,17 @@ app.get('/api/v1/locations/:id', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/v1/locations/:id/report.html', route(async (req, res) => {
+  const locality = await getPublicLocality(req.params.id);
+  if (!locality) throw new HttpError(404, 'Place unavailable.');
+  res.set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'");
+  res.type('html').send(renderEvidenceBrief(locality));
+}));
+
 // 4. Locality Score
 app.get('/api/v1/locations/:id/score', async (req: Request, res: Response) => {
   try {
-    const locality = await getLocalityByIdFromDb(req.params.id);
+    const locality = await getPublicLocality(req.params.id, false);
     if (!locality) {
       return res.status(404).json({ error: 'Locality Not Found' });
     }
@@ -174,7 +164,7 @@ app.get('/api/v1/locations/:id/score', async (req: Request, res: Response) => {
 // 5. Locality Indicators
 app.get('/api/v1/locations/:id/indicators', async (req: Request, res: Response) => {
   try {
-    const locality = await getLocalityByIdFromDb(req.params.id);
+    const locality = await getPublicLocality(req.params.id, false);
     if (!locality) {
       return res.status(404).json({ error: 'Locality Not Found' });
     }
@@ -188,7 +178,7 @@ app.get('/api/v1/locations/:id/indicators', async (req: Request, res: Response) 
 // 6. Locality Facilities (PostGIS Radial Geodesic Search)
 app.get('/api/v1/locations/:id/facilities', async (req: Request, res: Response) => {
   try {
-    const locality = await getLocalityByIdFromDb(req.params.id);
+    const locality = await getPublicLocality(req.params.id, false);
     if (!locality) {
       return res.status(404).json({ error: 'Locality Not Found' });
     }
@@ -200,9 +190,8 @@ app.get('/api/v1/locations/:id/facilities', async (req: Request, res: Response) 
           !['all', 'healthcare', 'education', 'transport', 'parks', 'shopping', 'civic'].includes(category)))) {
       return res.status(400).json({ error: 'Use a radius from 1 to 5000 metres and a valid category.' });
     }
-    const facilitiesList = await getFacilitiesSpatial(
-      locality.center.lat,
-      locality.center.lng,
+    const facilitiesList = await getNearbyCatalogueFacilities(
+      locality.center,
       radiusMeters,
       category as string | undefined
     );
@@ -217,11 +206,11 @@ app.get('/api/v1/locations/:id/facilities', async (req: Request, res: Response) 
 // 7. Locality Map Geo-Data
 app.get('/api/v1/locations/:id/map', async (req: Request, res: Response) => {
   try {
-    const locality = await getLocalityByIdFromDb(req.params.id);
+    const locality = await getPublicLocality(req.params.id);
     if (!locality) {
       return res.status(404).json({ error: 'Locality Not Found' });
     }
-    const reports = await getCommunityReportsFromDb({ localityId: locality.id });
+    const reports = await getCommunityReportsFromDb({ localityId: locality.id, published: true });
     return res.json({
       center: locality.center,
       bounds: locality.bounds,
@@ -237,20 +226,17 @@ app.get('/api/v1/locations/:id/map', async (req: Request, res: Response) => {
 // 8. Multi-Locality Comparison (PostgreSQL backed)
 app.post('/api/v1/comparisons', async (req: Request, res: Response) => {
   const { ids } = req.body ?? {};
-  if (!Array.isArray(ids) || ids.length < 2 || ids.length > 3 ||
+  if (!Array.isArray(ids) || ids.length < 2 || ids.length > 5 ||
       !ids.every((id) => typeof id === 'string' && id.length > 0 && id.length <= 150) ||
       new Set(ids.map((id) => id.toLowerCase())).size !== ids.length) {
-    return res.status(400).json({ error: 'Provide 2 or 3 distinct locality IDs to compare.' });
+    return res.status(400).json({ error: 'Provide 2 to 5 distinct locality IDs to compare.' });
   }
 
   try {
-    const matched: Locality[] = [];
-    for (const id of ids) {
-      const loc = await getLocalityByIdFromDb(id);
-      if (loc) matched.push(loc);
-    }
+    const found = await Promise.all(ids.map((id) => getPublicLocality(id, false)));
+    const matched = found.filter((locality): locality is Locality => locality !== null);
 
-    if (matched.length !== ids.length) {
+    if (matched.length !== ids.length || new Set(matched.map((place) => place.id)).size !== matched.length) {
       return res.status(404).json({ error: 'One or more localities could not be found for comparison.' });
     }
 
@@ -288,126 +274,13 @@ app.post('/api/v1/comparisons', async (req: Request, res: Response) => {
   }
 });
 
-// 9. AreaWise AI Assistant RAG (Multilingual & Spoken Script Support)
-app.post('/api/v1/ai/ask', async (req: Request, res: Response) => {
-  try {
-    const { prompt, localityId, comparisonIds = [], language = 'en' } = req.body ?? {};
-    if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 2500 ||
-        !Array.isArray(comparisonIds) || comparisonIds.length > 3 ||
-        (localityId !== undefined && typeof localityId !== 'string') ||
-        !['en', 'hi', 'hinglish'].includes(language)) {
-      return res.status(400).json({ error: 'Provide a valid question, localities and language.' });
-    }
-
-    const ids = [...(localityId ? [localityId] : []), ...comparisonIds];
-    if (!ids.length || !ids.every((id) => typeof id === 'string' && id.length > 0 && id.length <= 150)) {
-      return res.status(400).json({ error: 'Select at least one valid locality.' });
-    }
-
-    const uniqueIds = [...new Set<string>(ids.map((id) => id.toLowerCase()))];
-    if (uniqueIds.length > 3) {
-      return res.status(400).json({ error: 'Select no more than three localities.' });
-    }
-    const evidence = await Promise.all(uniqueIds.map(getLocalityByIdFromDb));
-    if (evidence.some((locality) => !locality)) {
-      return res.status(404).json({ error: 'Evidence is unavailable for one or more selected localities.' });
-    }
-
-    const aiResult = await askAreaWiseAI({
-      prompt: prompt.trim(),
-      localityId,
-      comparisonIds,
-      language,
-      activeLocalitiesList: evidence.filter((locality): locality is Locality => locality !== null),
-    });
-
-    return res.json(aiResult);
-  } catch (error: any) {
-    console.error('Error in /api/v1/ai/ask:', error);
-    return res.status(500).json({
-      error: 'AI Assistance Unavailable',
-      message: 'The evidence engine could not complete the request.',
-    });
-  }
-});
-
-// 10. Community Reports: List (PostgreSQL backed)
-app.get('/api/v1/community/reports', async (req: Request, res: Response) => {
-  try {
-    const { localityId, category, status } = req.query;
-    const reports = await getCommunityReportsFromDb({
-      localityId: localityId as string,
-      category: category as string,
-      status: status as string,
-    });
-
-    return res.json({
-      total: reports.length,
-      reports,
-    });
-  } catch (error) {
-    console.error('Error in /api/v1/community/reports:', error);
-    return res.status(500).json({ error: 'Failed to fetch community reports' });
-  }
-});
-
-// 11. Community Reports: Submit (PostgreSQL backed with transactions & audit log)
-app.post('/api/v1/community/reports', async (req: Request, res: Response) => {
-  try {
-    const { localityId, title, category, description, lat, lng, imageUrl, submittedBy } = req.body;
-
-    if (!localityId || !title || !category || !description) {
-      return res.status(400).json({ error: 'Missing required report fields (localityId, title, category, description).' });
-    }
-
-    const newReport = await createCommunityReportInDb({
-      localityId,
-      title,
-      category,
-      description,
-      lat,
-      lng,
-      imageUrl,
-      submittedBy,
-    });
-
-    return res.status(201).json(newReport);
-  } catch (error: any) {
-    console.error('Error submitting community report:', error);
-    const status = error?.message?.includes('not found') ? 400 : 500;
-    return res.status(status).json({ error: error?.message || 'Failed to submit community report' });
-  }
-});
-
-// 12. Community Reports: Upvote (PostgreSQL backed with transactions)
-app.post('/api/v1/community/reports/:id/vote', async (req: Request, res: Response) => {
-  try {
-    const result = await voteOnReportInDb(req.params.id, 1);
-    return res.json(result);
-  } catch (error: any) {
-    console.error('Error voting on community report:', error);
-    const status = error?.message?.includes('Not Found') ? 404 : 500;
-    return res.status(status).json({ error: error?.message || 'Failed to record vote' });
-  }
-});
-
-// 13. Admin: Moderate Community Report (PostgreSQL backed with transactions)
-app.patch('/api/v1/community/reports/:id/moderate', requireAdmin, async (req: Request, res: Response) => {
-  try {
-    const { status, officialResponse } = req.body;
-    const moderator: string = res.locals.adminUid;
-    const updated = await moderateReportInDb(req.params.id, status, officialResponse, moderator);
-    return res.json(updated);
-  } catch (error: any) {
-    console.error('Error moderating community report:', error);
-    const statusCode = error?.message?.includes('Not Found') ? 404 : 500;
-    return res.status(statusCode).json({ error: error?.message || 'Failed to moderate report' });
-  }
-});
-
 // 14. Admin: Data Sources Status
-app.get('/api/v1/admin/data-sources', (_req: Request, res: Response) => {
-  return res.json(DATA_SOURCES);
+app.get('/api/v1/admin/data-sources', async (_req, res) => {
+  try {
+    return res.json(await getGeographyImports());
+  } catch {
+    return res.status(503).json({ error: 'Dataset records are temporarily unavailable.' });
+  }
 });
 
 // 15. Admin: Scoring Weights Config (PostgreSQL backed)
@@ -453,7 +326,7 @@ app.get('/api/v1/health', (_req, res) => {
 app.get('/api/v1/ready', async (_req, res) => {
   try {
     const { rows: [row] } = await pool.query<{ has_schema: boolean }>(`
-      SELECT PostGIS_Version(), to_regclass('public.localities') IS NOT NULL AS has_schema
+      SELECT PostGIS_Version(), to_regclass('public.geo_places') IS NOT NULL AS has_schema
     `);
     if (row?.has_schema) return res.json({ status: 'ready' });
   } catch {
@@ -467,11 +340,17 @@ app.use('/api', (_req, res) => {
 });
 
 app.use('/api', (error: unknown, _req: Request, res: Response, _next: express.NextFunction) => {
+  if (error instanceof HttpError) {
+    return res.status(error.status).json({ error: error.message });
+  }
   const status = (error as { status?: number }).status;
   if (status === 400 || status === 413) {
     return res.status(status).json({ error: status === 400 ? 'Invalid JSON body' : 'Request body too large' });
   }
-  console.error('Unhandled API error:', error);
+  console.error(JSON.stringify({
+    event: 'http.error', requestId: res.getHeader('X-Request-Id'),
+    kind: error instanceof Error ? error.name : 'UnknownError',
+  }));
   return res.status(500).json({ error: 'Internal server error' });
 });
 

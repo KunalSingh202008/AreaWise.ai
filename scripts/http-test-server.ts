@@ -23,6 +23,7 @@ export async function withTestServer<T>(
       ...process.env,
       DATABASE_URL: 'postgresql://areawise_test@127.0.0.1:1/areawise_test',
       GEMINI_API_KEY: '',
+      FIREBASE_AUTH_EMULATOR_HOST: '',
       RAZORPAY_KEY_ID: '',
       RAZORPAY_KEY_SECRET: '',
       ...env,

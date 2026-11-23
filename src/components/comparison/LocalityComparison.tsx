@@ -1,279 +1,172 @@
-import React, { useState } from 'react';
-import { Locality } from '../../types';
-import { Check, Sparkles, ArrowRight, ShieldCheck, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
+import type { Locality, PlaceSummary } from '../../types';
+import { readJson } from '../../api';
+import { authenticatedFetch, useAuth } from '../../context/AuthContext';
+import { PlaceSearch } from '../geography/PlaceSearch';
 
-interface LocalityComparisonProps {
-  localities: Locality[];
-  initialSelectedIds?: string[];
+interface Props {
+  places: PlaceSummary[];
+  initialSelectedIds: string[];
   onSelectLocality: (id: string) => void;
-  onOpenAssistantWithPrompt?: (prompt: string) => void;
+  onAskCopilot: (ids: string[]) => void;
 }
 
-export const LocalityComparison: React.FC<LocalityComparisonProps> = ({
-  localities,
-  initialSelectedIds = ['sigra', 'lanka'],
-  onSelectLocality,
-  onOpenAssistantWithPrompt,
-}) => {
-  const [selectedIds, setSelectedIds] = useState<string[]>(
-    initialSelectedIds.length >= 2 ? initialSelectedIds : ['sigra', 'lanka']
-  );
-  const [aiSummary, setAiSummary] = useState<string | null>(null);
-  const [isLoadingAI, setIsLoadingAI] = useState(false);
+interface Comparison {
+  localities: Locality[];
+  comparisonMatrix: { categoryKey: string; categoryLabel: string; scores: Record<string, number | null> }[];
+}
 
-  const toggleSelect = (id: string) => {
-    if (selectedIds.includes(id)) {
-      if (selectedIds.length > 2) {
-        setSelectedIds(selectedIds.filter((item) => item !== id));
-      }
-    } else {
-      if (selectedIds.length < 3) {
-        setSelectedIds([...selectedIds, id]);
-      } else {
-        // replace last
-        setSelectedIds([selectedIds[0], selectedIds[1], id]);
-      }
-    }
-  };
+export function LocalityComparison({ places, initialSelectedIds, onSelectLocality, onAskCopilot }: Props) {
+  const { user, reloadAccount } = useAuth();
+  const [saveStatus, setSaveStatus] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [selection, setSelection] = useState<string[] | null>(initialSelectedIds.length ? initialSelectedIds : null);
+  const [names, setNames] = useState<Record<string, string>>({});
+  const [comparison, setComparison] = useState<Comparison | null>(null);
+  const [error, setError] = useState('');
+  const ids = selection ?? places.slice(0, 2).map((place) => place.id);
+  const signature = ids.join(',');
 
-  const selectedLocalities = localities.filter((l) => selectedIds.includes(l.id));
-
-  const categories = [
-    { key: 'connectivity', name: 'Connectivity & Transit' },
-    { key: 'healthcare', name: 'Healthcare Accessibility' },
-    { key: 'education', name: 'Education Access' },
-    { key: 'environment', name: 'Environmental Intelligence' },
-    { key: 'civicInfrastructure', name: 'Civic Infrastructure' },
-    { key: 'dailyAmenities', name: 'Daily Amenities' },
-    { key: 'propertyMarketTransparency', name: 'Property Market Transparency' },
-  ];
-
-  const handleGenerateAISummary = async () => {
-    setIsLoadingAI(true);
-    try {
-      const response = await fetch('/api/v1/ai/ask', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: `Compare ${selectedLocalities.map((l) => l.name).join(' and ')} in Varanasi. Explain which is superior for families, which for students, and what the key environmental trade-offs are based on retrieved evidence.`,
-          comparisonIds: selectedIds,
-        }),
+  useEffect(() => {
+    if (!signature.includes(',')) return;
+    const abort = new AbortController();
+    fetch('/api/v1/comparisons', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: signature.split(',') }),
+      signal: abort.signal,
+    }).then((response) => readJson<Comparison>(response))
+      .then((value) => { if (!abort.signal.aborted) setComparison(value); })
+      .catch((error: unknown) => {
+        if (!abort.signal.aborted) setError(error instanceof Error ? error.message : 'Could not compare selected places.');
       });
-      const data = await response.json();
-      setAiSummary(data.answer);
-    } catch (err) {
-      console.error('Failed to generate AI comparison:', err);
-      setAiSummary('Error contacting AI engine. Please check local records.');
-    } finally {
-      setIsLoadingAI(false);
-    }
-  };
+    return () => abort.abort();
+  }, [signature]);
+
+  function select(next: string[]) {
+    setSelection(next);
+    setSaveStatus('');
+    setError('');
+    setComparison(null);
+  }
+
+  const labelFor = (id: string) => names[id]
+    ?? comparison?.localities.find((place) => place.id === id)?.name
+    ?? places.find((place) => place.id === id)?.name
+    ?? id;
+
+  const profiles = [
+    ['familyScore', 'Family'],
+    ['studentScore', 'Student'],
+    ['commuterScore', 'Commuter'],
+    ['investorScore', 'Investor'],
+  ] as const;
+  const rows = comparison ? [
+    { label: 'AreaScore', values: comparison.localities.map((locality) => locality.scores.overallScore ?? 'Withheld') },
+    { label: 'Score evidence coverage', values: comparison.localities.map((locality) => `${locality.scores.coverageScore}%`) },
+    { label: 'Score confidence', values: comparison.localities.map((locality) => locality.scores.confidenceScore ?? 'Unavailable') },
+    ...profiles.map(([key, label]) => ({
+      label: `${label} profile`,
+      values: comparison.localities.map((locality) => locality.profileScores[key] ?? 'Unavailable'),
+    })),
+    ...comparison.comparisonMatrix.map((field) => ({
+      label: field.categoryLabel, values: comparison.localities.map((locality) => field.scores[locality.id] ?? 'Unavailable'),
+    })),
+  ] : [];
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200 dark:border-slate-800">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
-            Locality Comparison Engine
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Compare up to 3 pilot areas side-by-side using normalized empirical indicators.
-          </p>
-        </div>
-
-        {/* Locality Selector Pills */}
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-slate-500 font-medium">Select Areas:</span>
-          {localities.map((loc) => {
-            const isSelected = selectedIds.includes(loc.id);
-            return (
-              <button
-                key={loc.id}
-                onClick={() => toggleSelect(loc.id)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors flex items-center gap-1.5 ${
-                  isSelected
-                    ? 'bg-slate-900 dark:bg-emerald-600 text-white border-transparent shadow-xs'
-                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                {isSelected && <Check className="w-3 h-3" />}
-                {loc.name}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Comparison Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {/* Metric Labels Column */}
-        <div className="hidden md:flex flex-col justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-400">
-          <div className="font-bold text-slate-900 dark:text-white text-sm mb-6">
-            Metric / Category
-          </div>
-          <div className="py-2.5 border-b border-slate-200 dark:border-slate-800">Overall AreaScore</div>
-          <div className="py-2.5 border-b border-slate-200 dark:border-slate-800">FamilyScore Profile</div>
-          <div className="py-2.5 border-b border-slate-200 dark:border-slate-800">StudentScore Profile</div>
-          <div className="py-2.5 border-b border-slate-200 dark:border-slate-800">CommuterScore Profile</div>
-          <div className="py-2.5 border-b border-slate-200 dark:border-slate-800">InvestorScore Profile</div>
-          <div className="py-2.5 border-b border-slate-200 dark:border-slate-800">Data Coverage</div>
-          <div className="py-2.5 border-b border-slate-200 dark:border-slate-800">Data Confidence</div>
-          <div className="py-2.5 font-bold text-slate-900 dark:text-white">Category Scores</div>
-        </div>
-
-        {/* Selected Localities Columns */}
-        {selectedLocalities.map((loc) => (
-          <div
-            key={loc.id}
-            className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between space-y-4"
-          >
-            {/* Header */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                  {loc.name}
-                </h3>
-                <span className="text-xs px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-slate-500">
-                  PIN {loc.pincode}
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mb-4">
-                {loc.tagline}
-              </p>
-
-              {/* Large Score */}
-              <div className="py-2 border-b border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
-                <span className="md:hidden text-xs text-slate-400">AreaScore:</span>
-                {loc.scores.overallScore !== null ? (
-                  <span className="text-3xl font-extrabold text-slate-900 dark:text-white font-mono">
-                    {loc.scores.overallScore}
-                    <span className="text-xs text-slate-400 font-normal"> / 100</span>
-                  </span>
-                ) : (
-                  <div className="flex flex-col items-end sm:items-start">
-                    <span className="text-sm font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                      <AlertTriangle className="w-3.5 h-3.5" /> Withheld
-                    </span>
-                    <span className="text-[11px] text-slate-400">Low Coverage (&lt;50%)</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Profiles */}
-              <div className="space-y-2 py-3 border-b border-slate-100 dark:border-slate-800 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">FamilyScore:</span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                    {loc.profileScores.familyScore !== null ? loc.profileScores.familyScore : <span className="text-slate-400 font-normal text-[11px]">Unrated</span>}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">StudentScore:</span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                    {loc.profileScores.studentScore !== null ? loc.profileScores.studentScore : <span className="text-slate-400 font-normal text-[11px]">Unrated</span>}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">CommuterScore:</span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                    {loc.profileScores.commuterScore !== null ? loc.profileScores.commuterScore : <span className="text-slate-400 font-normal text-[11px]">Unrated</span>}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">InvestorScore:</span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                    {loc.profileScores.investorScore !== null ? loc.profileScores.investorScore : <span className="text-slate-400 font-normal text-[11px]">Unrated</span>}
-                  </span>
-                </div>
-              </div>
-
-              {/* Data Reliability */}
-              <div className="space-y-1.5 py-3 border-b border-slate-100 dark:border-slate-800 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Coverage:</span>
-                  <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{loc.scores.coverageScore}%</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Confidence:</span>
-                  <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
-                    {loc.scores.confidenceScore !== null ? `${loc.scores.confidenceScore}%` : 'Unrated'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Category Breakdown */}
-              <div className="space-y-2 py-3 text-xs">
-                {categories.map((c) => {
-                  const score = (loc.scores.categoryScores as any)[c.key] as number | null | undefined;
-                  const hasScore = score !== null && score !== undefined;
-                  return (
-                    <div key={c.key} className="space-y-0.5">
-                      <div className="flex justify-between text-[11px]">
-                        <span className="text-slate-500 truncate max-w-[140px]">{c.name}</span>
-                        <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                          {hasScore ? score : <span className="text-slate-400 font-normal text-[10px]">N/A</span>}
-                        </span>
-                      </div>
-                      <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                        {hasScore ? (
-                          <div
-                            className={`h-full rounded-full ${
-                              score >= 80 ? 'bg-emerald-500' : score >= 65 ? 'bg-blue-500' : score >= 50 ? 'bg-amber-500' : 'bg-rose-500'
-                            }`}
-                            style={{ width: `${score}%` }}
-                          />
-                        ) : (
-                          <div className="h-full w-full bg-slate-200/60 dark:bg-slate-700/60 border-r border-dashed border-slate-400" />
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <button
-              onClick={() => onSelectLocality(loc.id)}
-              className="w-full py-2 text-xs font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white transition-colors flex items-center justify-center gap-1"
-            >
-              Inspect {loc.name} Dashboard <ArrowRight className="w-3.5 h-3.5" />
+    <div className="mx-auto max-w-7xl space-y-5 px-4 py-8 sm:px-6">
+      <header className="space-y-1">
+        <h1 className="text-2xl font-extrabold sm:text-3xl">Compare localities</h1>
+        <p className="text-sm text-slate-600 dark:text-slate-400">Choose two to five places and compare their coverage, scores and evidence.</p>
+      </header>
+      {ids.length < 5 && <PlaceSearch label="Add a place by name or PIN" onSelect={(place) => {
+        if (ids.includes(place.id)) return;
+        setNames((previous) => ({ ...previous, [place.id]: place.name }));
+        select([...ids, place.id]);
+      }} />}
+      <ul aria-label="Selected places" className="flex flex-wrap gap-2">
+        {ids.map((id) => (
+          <li key={id}>
+            <button onClick={() => select(ids.filter((item) => item !== id))}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold dark:border-slate-700">
+              {labelFor(id)} <X className="h-3 w-3" aria-label="Remove" />
             </button>
-          </div>
+          </li>
         ))}
-      </div>
-
-      {/* AI Comparative Synthesis Section */}
-      <div className="p-6 rounded-2xl bg-slate-900 text-white space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" />
-              Evidence-Grounded AI Synthesis
-            </div>
-            <h3 className="text-lg font-bold text-white">
-              AI Comparative Trade-Off Analysis
-            </h3>
-            <p className="text-xs text-slate-300">
-              Generates an evidence-backed comparative assessment grounded in statutory records and resident logs.
-            </p>
-          </div>
-
-          <button
-            onClick={handleGenerateAISummary}
-            disabled={isLoadingAI}
-            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold transition-colors flex items-center gap-2 shrink-0 shadow-sm"
-          >
-            {isLoadingAI ? 'Synthesizing Evidence...' : 'Generate AI Comparison'}
+      </ul>
+      {ids.length < 2 && <p role="status" className="text-sm text-slate-500">Select at least two places.</p>}
+      {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}
+      {ids.length >= 2 && !comparison && !error && <p role="status" className="text-sm text-slate-500">Loading comparison…</p>}
+      {comparison && (
+        <>
+          {user && <form className="flex flex-wrap items-end gap-2" onSubmit={async (event) => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            setSaveStatus('');
+            setSaving(true);
+            try {
+              await authenticatedFetch('/api/v1/me/comparisons', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: data.get('title'), placeIds: ids }),
+              }).then((response) => readJson(response));
+              await reloadAccount();
+              setSaveStatus('Comparison saved to My research.');
+            } catch (error) {
+              setSaveStatus(error instanceof Error ? error.message : 'Could not save comparison.');
+            } finally {
+              setSaving(false);
+            }
+          }}>
+            <label className="space-y-1 text-xs font-semibold">
+              Comparison title
+              <input name="title" type="text" maxLength={120} required className="block rounded-lg border border-slate-300 bg-transparent p-2 text-sm dark:border-slate-700" />
+            </label>
+            <button disabled={saving} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white">Save comparison</button>
+            {saveStatus && <p role="status" className="text-xs">{saveStatus}</p>}
+          </form>}
+          <button className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold dark:border-slate-700" onClick={() => onAskCopilot(ids)}>
+            Ask Copilot about these places
           </button>
-        </div>
-
-        {aiSummary && (
-          <div className="mt-4 p-5 rounded-xl bg-slate-800/80 border border-slate-700 text-xs sm:text-sm text-slate-200 leading-relaxed space-y-3 whitespace-pre-line">
-            {aiSummary}
+          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+            <table className="w-full min-w-[32rem] text-left text-sm">
+              <thead className="bg-slate-100 dark:bg-slate-800">
+                <tr>
+                  <th scope="col" className="p-3">Measure</th>
+                  {comparison.localities.map((place) => (
+                    <th scope="col" key={place.id} className="min-w-32 p-3">
+                      <button className="text-emerald-700 underline dark:text-emerald-300" onClick={() => onSelectLocality(place.id)}>{place.name}</button>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.label} className="border-t border-slate-100 dark:border-slate-800">
+                    <th scope="row" className="p-3 text-xs font-semibold">{row.label}</th>
+                    {row.values.map((value, index) => (
+                      <td key={comparison.localities[index].id} className="p-3 tabular-nums">{value}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        )}
-      </div>
+          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-label="Comparison sources">
+            {comparison.localities.map((place) => (
+              <div key={place.id} className="rounded-xl border border-slate-200 p-4 text-sm dark:border-slate-800">
+                <h2 className="font-bold">{place.name}</h2>
+                {place.geography && <a href={place.geography.source.recordUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs underline">GeoNames source record</a>}
+                <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                  {place.observations?.length || 'No'} reviewed measurements
+                  {place.pincode && ` · PIN ${place.pincode}`}
+                </p>
+              </div>
+            ))}
+          </section>
+        </>
+      )}
     </div>
   );
-};
+}

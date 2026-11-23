@@ -1,121 +1,120 @@
-import React from 'react';
-import { Locality } from '../../types';
-import { useAuth } from '../../context/AuthContext';
-import { Bookmark, ArrowRight, ArrowRightLeft, FileDown, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Bookmark } from 'lucide-react';
+import type { CommunityReport, Locality } from '../../types';
+import { getJson, readJson } from '../../api';
+import { authenticatedFetch, useAuth } from '../../context/AuthContext';
 
-interface SavedAreasViewProps {
-  localities: Locality[];
+interface Props {
   onSelectLocality: (id: string) => void;
   onOpenCompare: (selectedIds: string[]) => void;
   onOpenReport: (locality: Locality) => void;
 }
+interface SavedPlace {
+  id: string;
+  name: string;
+  region: string;
+}
 
-export const SavedAreasView: React.FC<SavedAreasViewProps> = ({
-  localities,
-  onSelectLocality,
-  onOpenCompare,
-  onOpenReport,
-}) => {
-  const { user, toggleSaveLocality } = useAuth();
-  const savedIds = user?.savedLocalityIds || [];
-  const savedList = localities.filter((l) => savedIds.includes(l.id));
+export function SavedAreasView({ onSelectLocality, onOpenCompare, onOpenReport }: Props) {
+  const { user, loading, accountError, comparisons, reloadAccount, toggleSaveLocality, setPreferredProfile } = useAuth();
+  const [places, setPlaces] = useState<SavedPlace[]>([]);
+  const [reports, setReports] = useState<CommunityReport[]>([]);
+  const [error, setError] = useState('');
+  const uid = user?.id;
+  const signature = user?.savedLocalityIds.join(',');
+
+  useEffect(() => {
+    if (!uid) return;
+    const abort = new AbortController();
+    async function load<T>(path: string) {
+      return readJson<T>(await authenticatedFetch('/api/v1/me/' + path, { signal: abort.signal }));
+    }
+    Promise.all([
+      load<{ places: SavedPlace[] }>('saved'),
+      load<{ reports: CommunityReport[] }>('reports'),
+    ]).then(([saved, authored]) => {
+      if (!abort.signal.aborted) {
+        setPlaces(saved.places);
+        setReports(authored.reports);
+      }
+    }).catch((error: unknown) => {
+      if (!abort.signal.aborted) setError(error instanceof Error ? error.message : 'Dashboard data unavailable.');
+    });
+    return () => abort.abort();
+  }, [uid, signature]);
+
+  async function run(action: () => Promise<unknown>) {
+    setError('');
+    try {
+      await action();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not update your dashboard.');
+    }
+  }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200 dark:border-slate-800">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-            <Bookmark className="w-6 h-6 text-emerald-500 fill-current" />
-            Saved Localities & Portfolios
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Track and monitor intelligence reports for areas of interest across Varanasi.
-          </p>
-        </div>
+    <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6">
+      <h1 className="flex items-center gap-2 text-2xl font-extrabold"><Bookmark className="h-6 w-6 text-emerald-600" /> My research</h1>
+      {loading && <p role="status" className="text-sm text-slate-500">Loading account…</p>}
+      {!loading && !user && <p className="text-sm text-slate-600 dark:text-slate-400">Sign in to see saved places, comparisons and your community submissions.</p>}
+      {(error || accountError) && <p role="alert" className="text-sm text-rose-600">{error || accountError}</p>}
+      {user && (
+        <>
+          <label className="flex flex-wrap items-center gap-2 text-sm">Preferred profile
+            <select value={user.preferredProfile} className="rounded border border-slate-300 bg-transparent p-2 text-xs dark:border-slate-700"
+              onChange={(event) => setPreferredProfile(event.target.value as LocalityProfile)}>
+              {(['family', 'student', 'commuter', 'investor'] as const).map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </label>
 
-        {savedList.length >= 2 && (
-          <button
-            onClick={() => onOpenCompare(savedList.map((l) => l.id))}
-            className="px-4 py-2 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-2 transition-colors self-start sm:self-auto shadow-xs"
-          >
-            <ArrowRightLeft className="w-3.5 h-3.5" />
-            Compare All Saved ({savedList.length})
-          </button>
-        )}
-      </div>
+          <section className="space-y-3" aria-label="Saved places">
+            <h2 className="font-bold">Saved places</h2>
+            {!places.length && <p className="text-sm text-slate-500">Save a location from its locality profile.</p>}
+            <ul className="grid gap-3 md:grid-cols-2">
+              {places.map((place) => (
+                <li key={place.id} className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
+                  <button onClick={() => onSelectLocality(place.id)} className="font-semibold underline">{place.name}</button>
+                  <p className="text-xs text-slate-500">{place.region}</p>
+                  <div className="mt-3 flex gap-3 text-xs">
+                    <button onClick={() => void run(async () => onOpenReport(await getJson<Locality>(`/api/v1/locations/${encodeURIComponent(place.id)}`)))} className="underline">Evidence brief</button>
+                    <button onClick={() => void run(() => toggleSaveLocality(place.id))} className="underline">Remove</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
 
-      {savedList.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {savedList.map((locality) => (
-            <div
-              key={locality.id}
-              className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between space-y-4"
-            >
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                    {locality.name}
-                  </h3>
-                  <button
-                    onClick={() => toggleSaveLocality(locality.id)}
-                    title="Remove from saved"
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-800 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+          <section className="space-y-3" aria-label="Saved comparisons">
+            <h2 className="font-bold">Saved comparisons</h2>
+            {!comparisons.length && <p className="text-sm text-slate-500">Save a comparison to reopen it here.</p>}
+            <ul className="space-y-2">
+              {comparisons.map((item) => (
+                <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-800">
+                  <button onClick={() => onOpenCompare(item.placeIds)} className="font-semibold underline">{item.title}</button>
+                  <button className="text-xs underline" onClick={() => void run(async () => {
+                    const response = await authenticatedFetch(`/api/v1/me/comparisons/${item.id}`, { method: 'DELETE' });
+                    if (response.status !== 204) await readJson(response);
+                    await reloadAccount();
+                  })}>Remove</button>
+                </li>
+              ))}
+            </ul>
+          </section>
 
-                <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 mb-4">
-                  {locality.description}
-                </p>
-
-                <div className="flex items-baseline justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 mb-4">
-                  <span className="text-xs text-slate-500">Official AreaScore:</span>
-                  <span className="text-2xl font-black font-mono text-slate-900 dark:text-white">
-                    {locality.scores.overallScore !== null ? (
-                      <>
-                        {locality.scores.overallScore} <span className="text-xs font-normal text-slate-400">/ 100</span>
-                      </>
-                    ) : (
-                      <span className="text-sm font-bold text-amber-600 dark:text-amber-400">Withheld</span>
-                    )}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-500 mb-2">
-                  <div>Coverage: <strong className="text-slate-700 dark:text-slate-300">{locality.scores.coverageScore}%</strong></div>
-                  <div>Confidence: <strong className="text-slate-700 dark:text-slate-300">{locality.scores.confidenceScore !== null ? `${locality.scores.confidenceScore}%` : 'Unrated'}</strong></div>
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2">
-                <button
-                  onClick={() => onSelectLocality(locality.id)}
-                  className="flex-1 py-2 text-xs font-semibold rounded-lg bg-slate-900 dark:bg-emerald-600 text-white hover:bg-slate-800 flex items-center justify-center gap-1.5 transition-colors"
-                >
-                  Dashboard <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => onOpenReport(locality)}
-                  title="Download Evidence Brief"
-                  className="p-2 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                >
-                  <FileDown className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="text-center py-16 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 space-y-3">
-          <Bookmark className="w-8 h-8 text-slate-300 mx-auto" />
-          <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">No Saved Localities Yet</h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            Browse our Varanasi pilot neighborhoods (Sigra, Lanka, Mahmoorganj) and click "Save Area" on any dashboard to track it here.
-          </p>
-        </div>
+          <section className="space-y-3" aria-label="My community submissions">
+            <h2 className="font-bold">My community submissions</h2>
+            {!reports.length && <p className="text-sm text-slate-500">No submissions yet.</p>}
+            <ul className="space-y-2">
+              {reports.map((report) => <li key={report.id} className="rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-800">
+                <strong>{report.title}</strong> · {report.localityName}
+                <p className="text-xs text-slate-500">{report.status.replaceAll('_', ' ')}</p>
+              </li>)}
+            </ul>
+          </section>
+        </>
       )}
     </div>
   );
-};
+}
+
+type LocalityProfile = 'family' | 'student' | 'commuter' | 'investor';

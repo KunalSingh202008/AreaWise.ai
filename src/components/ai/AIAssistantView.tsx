@@ -1,432 +1,234 @@
-import React, { useState, useRef, useEffect } from 'react';
-import {
-  Send,
-  Sparkles,
-  BookOpen,
-  Mic,
-  MicOff,
-  Volume2,
-  VolumeX,
-  RotateCcw,
-  Square,
-  AlertCircle,
-  MapPin,
-  CheckCircle2,
-} from 'lucide-react';
-import { AIMessage, Locality } from '../../types';
+import { useEffect, useRef, useState } from 'react';
+import { Mic, Sparkles, Volume2 } from 'lucide-react';
+import type { CopilotResponse, EvidenceCitation, Locality } from '../../types';
+import { copilotLanguages, type CopilotLanguage } from '../../i18n/copilotLanguages';
 import { useLanguage } from '../../context/LanguageContext';
 import { useVoiceAssistant } from '../../hooks/useVoiceAssistant';
-import { VoiceVisualizer } from '../voice/VoiceVisualizer';
+import { authenticatedFetch, useAuth } from '../../context/AuthContext';
+import { readJson } from '../../api';
+import { PlaceSearch } from '../geography/PlaceSearch';
 
-interface AIAssistantViewProps {
-  localities: Locality[];
+interface Props {
   selectedLocality: Locality;
   onSelectLocality: (id: string) => void;
   initialPrompt?: string;
+  comparisonIds?: string[];
 }
+interface Message {
+  id: string | number;
+  role: 'user' | 'assistant';
+  content: string;
+  citations?: EvidenceCitation[] | null;
+  mode?: CopilotResponse['mode'];
+  limitations?: string[];
+  providerStatus?: CopilotResponse['providerStatus'];
+}
+interface SavedChat { id: string; title: string; placeIds: string[] | null }
 
-export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
-  localities,
-  selectedLocality,
-  onSelectLocality,
-  initialPrompt = '',
-}) => {
-  const { language, t } = useLanguage();
+const evidenceStatus = {
+  answered: 'Gemini response',
+  not_configured: 'Source results · Gemini is unavailable in this environment',
+  sign_in_required: 'Source results · Sign in for a Gemini response',
+  unavailable: 'Source results · Gemini could not complete this request',
+};
 
-  const getWelcomeContent = () => {
-    if (language === 'hi') {
-      return `नमस्ते! मैं **एरियावाइज एआई (AreaWise AI)** हूँ — वाराणसी के इलाकों का निष्पक्ष भू-स्थानिक विश्लेषक।
+export function AIAssistantView({ selectedLocality, onSelectLocality, initialPrompt = '', comparisonIds }: Props) {
+  const { user } = useAuth();
+  const { language: appLanguage } = useLanguage();
+  const [language, setLanguage] = useState<CopilotLanguage>(appLanguage);
+  const [prompt, setPrompt] = useState(initialPrompt);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [saved, setSaved] = useState<SavedChat[] | null>(null);
+  const [saveConversation, setSaveConversation] = useState(false);
+  const [conversationId, setConversationId] = useState<string | undefined>();
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const activeRequest = useRef<AbortController | null>(null);
+  const voice = useVoiceAssistant({ language, onTranscriptComplete: (text) => setPrompt(text.slice(0, 2500)) });
+  const ids = comparisonIds?.length ? comparisonIds : [selectedLocality.id];
 
-वर्तमान में आपका चयनित इलाका: **${selectedLocality.hindiName || selectedLocality.name} (${selectedLocality.city}, पिन ${selectedLocality.pincode})** है।
+  useEffect(() => () => { activeRequest.current?.abort(); }, []);
 
-मैं वास्तविक सरकारी सेंसरों (CPCB वायु गुणवत्ता, ISRO भुवन सैटेलाइट ग्रीन कवर, और यूपी जल निगम SCADA) के आधार पर उत्तर देता हूँ।
-
-आप माइक बटन दबाकर बोल सकते हैं या नीचे लिखकर पूछ सकते हैं!`;
-    }
-    if (language === 'hinglish') {
-      return `Namaste! Main **AreaWise AI** hoon — Varanasi ke areas ka independent research assistant.
-
-Aapka active locality hai: **${selectedLocality.name} (PIN ${selectedLocality.pincode})**.
-
-Main verified CPCB air monitors, ISRO green canopy, aur municipal records ke proof ke sath answer deta hoon. Koi fake broker claim nahi.
-
-Aap mic button daba kar bol sakte hain ya neeche type kar sakte hain!`;
-    }
-    return `Hello! I am **AreaWise AI**, an independent neighborhood intelligence assistant for Indian cities.
-
-Active Target Locality: **${selectedLocality.name}, ${selectedLocality.city} (PIN ${selectedLocality.pincode})**.
-
-I provide strictly evidence-grounded analysis retrieved from statutory air sensors (CPCB CAAQMS), satellite canopy telemetry (ISRO Bhuvan), and municipal water audits.
-
-Click the microphone to speak or type your question below!`;
-  };
-
-  const [messages, setMessages] = useState<AIMessage[]>([
-    {
-      id: 'msg-welcome',
-      role: 'assistant',
-      content: getWelcomeContent(),
-      spokenScript:
-        language === 'hi'
-          ? `नमस्ते! आप ${selectedLocality.hindiName || selectedLocality.name} के बारे में क्या जानना चाहते हैं?`
-          : language === 'hinglish'
-          ? `Namaste! Aapne ${selectedLocality.name} select kiya hai. Is area ke baare mein kya poochna chahte hain?`
-          : `Hello! Ask any question about ${selectedLocality.name}, Varanasi.`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    },
-  ]);
-
-  const [inputPrompt, setInputPrompt] = useState(initialPrompt);
-  const [isLoading, setIsLoading] = useState(false);
-  const [autoVoiceResponse, setAutoVoiceResponse] = useState(true);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // Hook up voice assistant
-  const {
-    isListening,
-    isSpeaking,
-    transcript,
-    errorMessage: voiceError,
-    isSupported: voiceSupported,
-    startListening,
-    stopListening,
-    speak,
-    stopSpeaking,
-  } = useVoiceAssistant({
-    language,
-    onTranscriptComplete: (text) => {
-      if (text) {
-        handleSendMessage(text);
-      }
-    },
-  });
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, isLoading, isListening]);
-
-  // Suggested Questions per Language
-  const getSuggestedQuestions = () => {
-    if (language === 'hi') {
-      return [
-        `${selectedLocality.hindiName || selectedLocality.name} में पारिवारिक जीवन और स्कूल कैसे हैं?`,
-        `यहाँ 2 किमी के दायरे में कौन से अस्पताल और इमरजेंसी सुविधाएं हैं?`,
-        `वायु गुणवत्ता (AQI) और पेयजल आपूर्ति की क्या स्थिति है?`,
-        `${selectedLocality.name} की महमूरगंज से तुलना करें।`,
-      ];
-    }
-    if (language === 'hinglish') {
-      return [
-        `${selectedLocality.name} mein family ke rehne ke liye mahaul kaisa hai?`,
-        `Nearby 2km radius mein best hospitals kaun se hain?`,
-        `Yahan waterlogging ya traffic ka koi major issue hai?`,
-        `${selectedLocality.name} aur Lanka ko compare karo.`,
-      ];
-    }
-    return [
-      `Is ${selectedLocality.name} suitable for a family with school children?`,
-      `What hospitals and emergency facilities are within 2.0 km?`,
-      `What are the verified air quality and civic water supply metrics?`,
-      `Compare ${selectedLocality.name} with Mahmoorganj.`,
-    ];
-  };
-
-  const handleSendMessage = async (textToSend?: string) => {
-    const query = (textToSend || inputPrompt).trim();
-    if (!query || isLoading) return;
-
-    const userMessage: AIMessage = {
-      id: `usr-${Date.now()}`,
-      role: 'user',
-      content: query,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInputPrompt('');
-    setIsLoading(true);
-
+  async function send() {
+    const question = prompt.trim();
+    if (!question || activeRequest.current) return;
+    const abort = new AbortController();
+    activeRequest.current = abort;
+    setError('');
+    setLoading(true);
+    const id = crypto.randomUUID();
+    const recentQuestions = messages.filter((message) => message.role === 'user').slice(-4).map((message) => message.content);
+    setMessages((previous) => [...previous, { id, role: 'user', content: question }]);
+    setPrompt('');
     try {
-      const response = await fetch('/api/v1/ai/ask', {
+      const options: RequestInit = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: query,
-          localityId: selectedLocality.id,
-          language,
+          prompt: question, language, comparisonIds: ids, recentQuestions,
+          saveConversation: !!user && saveConversation,
+          conversationId: saveConversation ? conversationId : undefined,
         }),
-      });
-
-      const data = await response.json();
-
-      const assistantMessage: AIMessage = {
-        id: `ai-${Date.now()}`,
-        role: 'assistant',
-        content: data.answer || 'No response returned from evidence engine.',
-        spokenScript: data.spokenScript,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        citations: data.citations || [],
-        warningNote: data.warningNote,
-        keyFindings: data.keyFindings || [],
-        dataFreshness: data.dataFreshness,
-        limitations: data.limitations || [],
-        suggestedNextSteps: data.suggestedNextSteps || [],
+        signal: abort.signal,
       };
-
-      setMessages((prev) => [...prev, assistantMessage]);
-
-      // Automatically speak response if voice mode enabled
-      if (autoVoiceResponse && data.spokenScript) {
-        speak(data.spokenScript, language);
+      const response = await (user ? authenticatedFetch('/api/v1/ai/ask', options) : fetch('/api/v1/ai/ask', options))
+        .then((result) => readJson<CopilotResponse>(result));
+      if (abort.signal.aborted) return;
+      setMessages((previous) => [...previous, {
+        id: crypto.randomUUID(), role: 'assistant', content: response.answer, citations: response.citations,
+        mode: response.mode, limitations: response.limitations, providerStatus: response.providerStatus,
+      }]);
+      if (response.conversationId) {
+        setConversationId(response.conversationId);
+        setSaved(null);
       }
-    } catch (err: any) {
-      console.error('Error querying AI assistant:', err);
-      const errorMessage: AIMessage = {
-        id: `err-${Date.now()}`,
-        role: 'assistant',
-        content: 'Unable to communicate with the evidence retrieval engine. Please retry in a moment.',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
+    } catch (error) {
+      if (!abort.signal.aborted) {
+        setError(error instanceof Error ? error.message : 'Copilot could not answer.');
+        setMessages((previous) => previous.filter((message) => message.id !== id));
+        setPrompt(question);
+      }
     } finally {
-      setIsLoading(false);
+      if (activeRequest.current === abort) {
+        activeRequest.current = null;
+        setLoading(false);
+      }
     }
-  };
+  }
+
+  async function listSaved() {
+    try {
+      const data = await authenticatedFetch('/api/v1/ai/conversations').then((response) => readJson<{ conversations: SavedChat[] }>(response));
+      setSaved(data.conversations);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not load saved conversations.');
+    }
+  }
+
+  async function openConversation(chat: SavedChat) {
+    try {
+      const data = await authenticatedFetch(`/api/v1/ai/conversations/${chat.id}`)
+        .then((response) => readJson<{ messages: Message[] }>(response));
+      setMessages(data.messages);
+      setConversationId(chat.id);
+      setSaveConversation(true);
+      setError('');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not open conversation.');
+    }
+  }
+
+  const samePlaceSelection = (chat: SavedChat) => chat.placeIds?.join(',') === ids.join(',');
+  const suggestions = language === 'hi'
+    ? ['इस जगह के लिए कौन-से स्रोत उपलब्ध हैं?', 'आसपास कौन से रेलवे स्टेशन सूचीबद्ध हैं?']
+    : language === 'hinglish'
+      ? ['Is jagah ke liye kaun se sources available hain?', 'Paas ke railway stations kaun se hain?']
+      : ['What evidence is available here?', 'Which railway stations are listed nearby?'];
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col h-[calc(100vh-8rem)]">
-      {/* Header with Active Locality Selector & Voice Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-emerald-500" />
-              AreaWise AI Assistant
-            </h1>
-            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 font-mono">
-              RAG Evidence Grounded
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs text-slate-500 dark:text-slate-400">Target Locality:</span>
-            <select
-              value={selectedLocality.id}
-              onChange={(e) => onSelectLocality(e.target.value)}
-              className="bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-xs px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 shadow-xs"
-            >
-              {localities.map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.name} {loc.hindiName ? `(${loc.hindiName})` : ''} - PIN {loc.pincode}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Audio Mute / Stop Controls */}
-        <div className="flex items-center gap-2">
-          {isSpeaking && (
-            <button
-              onClick={stopSpeaking}
-              className="px-3 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold flex items-center gap-1.5 animate-pulse"
-            >
-              <Square className="w-3 h-3 fill-current" />
-              {t.voice.stopSpeech}
-            </button>
-          )}
-
-          <button
-            onClick={() => setAutoVoiceResponse(!autoVoiceResponse)}
-            title={autoVoiceResponse ? 'Voice Readout Enabled' : 'Voice Readout Muted'}
-            className={`p-2 rounded-lg border transition-colors ${
-              autoVoiceResponse
-                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
-                : 'bg-white dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'
-            }`}
-          >
-            {autoVoiceResponse ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-          </button>
-        </div>
-      </div>
-
-      {/* Voice Visualizer Banner */}
-      {(isListening || isSpeaking) && (
-        <div className="my-2 p-2.5 rounded-xl bg-slate-900 text-white flex items-center justify-between shadow-lg text-xs">
-          <div className="flex items-center gap-2">
-            <VoiceVisualizer isListening={isListening} isSpeaking={isSpeaking} />
-            <span className="font-semibold">
-              {isListening ? t.voice.micListening : t.voice.speaking}
-            </span>
-          </div>
-          {isListening && (
-            <button
-              onClick={stopListening}
-              className="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px]"
-            >
-              {t.voice.micStop}
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Voice Error Notification */}
-      {voiceError && (
-        <div className="my-2 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          <span>{voiceError}</span>
-        </div>
-      )}
-
-      {/* Messages Scroll Area */}
-      <div className="flex-1 overflow-y-auto py-6 space-y-6">
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
-          >
-            <div
-              className={`max-w-3xl rounded-2xl p-5 text-xs sm:text-sm leading-relaxed space-y-3 ${
-                msg.role === 'user'
-                  ? 'bg-slate-900 text-white dark:bg-emerald-600 shadow-md'
-                  : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 shadow-xs'
-              }`}
-            >
-              <div className="whitespace-pre-line prose prose-slate dark:prose-invert max-w-none text-xs sm:text-sm">
-                {msg.content}
-              </div>
-
-              {/* Citations Box for Assistant */}
-              {msg.citations && msg.citations.length > 0 && (
-                <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] space-y-2">
-                  <div className="font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                    <BookOpen className="w-3.5 h-3.5" />
-                    {t.dashboard.statutorySources}:
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {msg.citations.map((cite, cIdx) => (
-                      <div
-                        key={cIdx}
-                        className="p-2 rounded bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-0.5"
-                      >
-                        <div className="font-semibold text-slate-900 dark:text-white truncate">
-                          {cite.source}
-                        </div>
-                        <div className="text-slate-500 flex items-center justify-between text-[10px]">
-                          <span>{cite.locality} · {cite.metric}</span>
-                          <span className="font-mono text-slate-400">{cite.date}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Spoken Audio Replay Control */}
-              {msg.spokenScript && (
-                <div className="pt-2 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400">
-                  <span className="italic truncate max-w-[280px]">"{msg.spokenScript}"</span>
-                  <button
-                    onClick={() => speak(msg.spokenScript!, language)}
-                    className="flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400 hover:underline shrink-0"
-                  >
-                    <Volume2 className="w-3 h-3" />
-                    {t.voice.replay}
-                  </button>
-                </div>
-              )}
-
-              {msg.warningNote && (
-                <div className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-1 mt-2">
-                  <AlertCircle className="w-3 h-3 shrink-0" />
-                  {msg.warningNote}
-                </div>
-              )}
-            </div>
-
-            <span className="text-[10px] text-slate-400 mt-1 px-2 font-mono">
-              {msg.timestamp}
-            </span>
-          </div>
-        ))}
-
-        {isLoading && (
-          <div className="flex items-center gap-2 p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-500 max-w-md shadow-xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-            <span>Retrieving verified CPCB air logs, ISRO canopy data, and facilities for {selectedLocality.name}...</span>
-          </div>
+    <div className="mx-auto max-w-4xl space-y-5 px-4 py-8 sm:px-6">
+      <header className="space-y-2">
+        <h1 className="flex items-center gap-2 text-2xl font-extrabold sm:text-3xl">
+          <Sparkles className="h-6 w-6 text-emerald-600" /> AreaWise AI Copilot
+        </h1>
+        <p className="text-sm text-slate-600 dark:text-slate-400">
+          {ids.length > 1 ? `Selected comparison · ${ids.length} places` : selectedLocality.name}
+        </p>
+        <PlaceSearch onSelect={(place) => onSelectLocality(place.id)} />
+      </header>
+      <div className="flex flex-wrap items-center gap-3 text-xs">
+        <label className="flex items-center gap-2 font-semibold">
+          Answer language
+          <select value={language} onChange={(event) => setLanguage(event.target.value as CopilotLanguage)}
+            className="rounded-md border border-slate-300 bg-white px-2 py-1.5 dark:border-slate-700 dark:bg-slate-900">
+            {Object.entries(copilotLanguages).map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+          </select>
+        </label>
+        {user && (
+          <>
+            <label className="flex items-center gap-1.5">
+              <input type="checkbox" checked={saveConversation} disabled={loading}
+                onChange={(event) => { setSaveConversation(event.target.checked); if (!event.target.checked) setConversationId(undefined); }} />
+              Save conversation to my account
+            </label>
+            <button className="underline" disabled={loading} onClick={() => void listSaved()}>Saved chats</button>
+          </>
         )}
-
-        <div ref={messagesEndRef} />
+        {messages.length > 0 && <button disabled={loading} className="underline" onClick={() => {
+          setMessages([]); setConversationId(undefined); setError('');
+        }}>New chat</button>}
       </div>
-
-      {/* Suggested Questions Strip */}
-      <div className="py-2 overflow-x-auto flex items-center gap-2 shrink-0">
-        <span className="text-[11px] font-semibold text-slate-400 shrink-0">Suggested:</span>
-        {getSuggestedQuestions().map((q, idx) => (
-          <button
-            key={idx}
-            onClick={() => handleSendMessage(q)}
-            className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 whitespace-nowrap transition-colors border border-slate-200 dark:border-slate-700"
-          >
-            {q}
-          </button>
+      {saved && <section className="space-y-2 rounded-xl border border-slate-200 p-3 text-xs dark:border-slate-800" aria-label="Saved conversations">
+        <div className="flex justify-between"><h2 className="font-semibold">Saved chats for this selection</h2><button className="underline" onClick={() => setSaved(null)}>Close</button></div>
+        {!saved.some(samePlaceSelection) && <p>No saved chats for these places.</p>}
+        {saved.filter(samePlaceSelection).map((chat) => <div className="flex items-baseline gap-3" key={chat.id}>
+          <button disabled={loading} className="text-left underline" onClick={() => void openConversation(chat)}>{chat.title || 'Conversation'}</button>
+          <button disabled={loading} className="text-xs underline" onClick={async () => {
+            try {
+              const result = await authenticatedFetch(`/api/v1/ai/conversations/${chat.id}`, { method: 'DELETE' });
+              if (result.status !== 204) await readJson(result);
+              if (conversationId === chat.id) { setConversationId(undefined); setMessages([]); }
+              await listSaved();
+            } catch (error) {
+              setError(error instanceof Error ? error.message : 'Could not delete chat.');
+            }
+          }}>Delete</button>
+        </div>)}
+      </section>}
+      {!messages.length && <div className="flex flex-wrap gap-2">
+        {suggestions.map((item) => <button className="rounded-full border border-slate-300 px-3 py-1.5 text-xs dark:border-slate-700" key={item} onClick={() => setPrompt(item)}>{item}</button>)}
+      </div>}
+      <div className="space-y-3" aria-live="polite">
+        {messages.map((message) => (
+          <article key={message.id} className="space-y-2 rounded-xl border border-slate-200 bg-white p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
+            <p className="text-xs font-semibold text-slate-500">
+              {message.role === 'user' ? 'You' : message.providerStatus ? evidenceStatus[message.providerStatus] : message.mode === 'gemini' ? 'Gemini response' : 'Source results'}
+            </p>
+            {message.content && <p className="whitespace-pre-wrap break-words">{message.content}</p>}
+            {message.limitations?.length ? <ul className="list-disc space-y-1 pl-4 text-xs text-slate-600 dark:text-slate-400">
+              {message.limitations.map((item, index) => <li key={index}>{item}</li>)}
+            </ul> : null}
+            {message.citations?.length ? <details open={message.mode === 'evidence_only'} className="text-xs">
+              <summary className="cursor-pointer font-semibold">Sources ({message.citations.length})</summary>
+              <ul className="mt-2 space-y-2">
+                {message.citations.map((citation) => <li key={citation.id} className="rounded bg-slate-50 p-2 dark:bg-slate-800/70">
+                  <p><strong>{citation.id}</strong> · {citation.text}</p>
+                  <p className="mt-1 text-slate-500">
+                    <a href={citation.url} className="underline" target="_blank" rel="noreferrer">{citation.source}</a>
+                    {' · '}<a href={citation.licenseUrl} className="underline" target="_blank" rel="noreferrer">Licence</a>
+                    {citation.observationDate && ` · Observed ${citation.observationDate}`}
+                    {citation.recordModifiedOn && ` · Publisher record edited ${citation.recordModifiedOn}`}
+                  </p>
+                </li>)}
+              </ul>
+            </details> : null}
+            {message.role === 'assistant' && message.content && voice.supportsOutput && (
+              <button className="inline-flex items-center gap-1 text-xs underline" onClick={() => voice.isSpeaking ? voice.stopSpeaking() : voice.speak(message.content)}>
+                <Volume2 className="h-4 w-4" /> {voice.isSpeaking ? 'Stop audio' : 'Read aloud'}
+              </button>
+            )}
+          </article>
         ))}
+        {loading && <p role="status" className="text-sm text-slate-500">Retrieving locality evidence…</p>}
       </div>
-
-      {/* Input Form with Microphone Button */}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          handleSendMessage();
-        }}
-        className="mt-3 relative shrink-0 flex items-center bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-1.5"
-      >
-        {/* Microphone Voice Button */}
-        {voiceSupported ? (
-          <button
-            type="button"
-            onClick={isListening ? stopListening : startListening}
-            title={isListening ? t.voice.micStop : t.voice.micStart}
-            className={`p-2.5 rounded-xl transition-all duration-300 shrink-0 ${
-              isListening
-                ? 'bg-rose-600 text-white animate-pulse'
-                : 'text-slate-500 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-700'
-            }`}
-          >
-            {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-          </button>
-        ) : null}
-
-        <input
-          type="text"
-          value={inputPrompt || (isListening ? transcript : '')}
-          onChange={(e) => setInputPrompt(e.target.value)}
-          placeholder={
-            isListening
-              ? t.voice.micListening
-              : language === 'hi'
-              ? `${selectedLocality.name} के बारे में कुछ भी पूछें...`
-              : language === 'hinglish'
-              ? `${selectedLocality.name} ke baare mein kuch bhi poochhein...`
-              : `Ask about schools, hospitals, transit, air quality in ${selectedLocality.name}...`
-          }
-          disabled={isLoading}
-          className="w-full bg-transparent px-3 py-2 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none"
-        />
-
-        <button
-          type="submit"
-          disabled={(!inputPrompt.trim() && !transcript) || isLoading}
-          className="p-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white rounded-xl transition-colors shrink-0"
-        >
-          <Send className="w-4 h-4" />
-        </button>
+      {(error || voice.errorMessage) && <p role="alert" className="text-sm text-rose-600">{error || voice.errorMessage}</p>}
+      <form className="space-y-2 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+        onSubmit={(event) => { event.preventDefault(); void send(); }}>
+        <label className="block space-y-1 text-xs font-semibold">
+          Question
+          <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} required maxLength={2500}
+            placeholder="Ask about the selected places" rows={3}
+            className="block w-full rounded-lg border border-slate-300 bg-transparent p-2 text-sm font-normal dark:border-slate-700" />
+        </label>
+        <p className="text-xs text-slate-500">Avoid personal details. Live questions may be processed by Google Gemini.</p>
+        <div className="flex gap-2">
+          {voice.supportsInput && <button type="button" onClick={() => voice.isListening ? voice.stopListening() : voice.startListening()}
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-2 text-xs dark:border-slate-700">
+            <Mic className="h-4 w-4" /> {voice.isListening ? 'Stop recording' : 'Voice input'}
+          </button>}
+          <button disabled={loading || !prompt.trim()} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-60">Ask Copilot</button>
+        </div>
       </form>
     </div>
   );
-};
+}
