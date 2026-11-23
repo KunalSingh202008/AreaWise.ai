@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { initializeApp } from 'firebase/app';
-import { connectAuthEmulator, getAuth, GoogleAuthProvider, onIdTokenChanged, signInWithPopup, signOut } from 'firebase/auth';
+import { initializeApp } from '@firebase/app';
+import { connectAuthEmulator, getAuth, GoogleAuthProvider, onIdTokenChanged, signInWithPopup, signOut } from '@firebase/auth';
 import config from '../../firebase-applet-config.json';
 import { readJson } from '../api';
 import type { UserProfile, SupportedLanguage } from '../types';

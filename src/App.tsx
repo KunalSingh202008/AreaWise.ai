@@ -22,12 +22,13 @@ const AdminDashboard = lazy(() => import('./components/admin/AdminDashboard').th
 const SavedAreasView = lazy(() => import('./components/saved/SavedAreasView').then((m) => ({ default: m.SavedAreasView })));
 const BillingView = lazy(() => import('./components/billing/BillingView').then((m) => ({ default: m.BillingView })));
 const ProfessionalView = lazy(() => import('./components/professional/ProfessionalView').then((m) => ({ default: m.ProfessionalView })));
+const CoverageView = lazy(() => import('./components/geography/CoverageView').then((m) => ({ default: m.CoverageView })));
 const PrintableReportModal = lazy(() => import('./components/reports/PrintableReportModal').then((m) => ({ default: m.PrintableReportModal })));
 
 const paths: Record<Tab, string> = {
   landing: '/', dashboard: '/localities', explorer: '/map', compare: '/compare',
   community: '/community', assistant: '/copilot', admin: '/admin', saved: '/saved',
-  professional: '/professional', billing: '/plans',
+  professional: '/professional', billing: '/plans', coverage: '/coverage',
 };
 const tabs = Object.keys(paths) as Tab[];
 
@@ -240,6 +241,7 @@ function AppContent() {
               onOpenReport={setReport}
             />
           )}
+          {activeTab === 'coverage' && <CoverageView />}
           {activeTab === 'billing' && <BillingView key={user?.id ?? 'guest'} />}
           {activeTab === 'professional' && <ProfessionalView key={user?.id ?? 'guest'} onOpenComparison={openComparison} />}
           {report && <PrintableReportModal locality={report} onClose={() => setReport(null)} />}

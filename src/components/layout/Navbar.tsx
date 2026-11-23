@@ -5,7 +5,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import { Sun, Moon, Shield, Bookmark, Sparkles, Globe, MapPin, ChevronDown } from 'lucide-react';
 import { SupportedLanguage, Locality } from '../../types';
 
-export type Tab = 'landing' | 'dashboard' | 'explorer' | 'compare' | 'community' | 'assistant' | 'admin' | 'saved' | 'professional' | 'billing';
+export type Tab = 'landing' | 'dashboard' | 'explorer' | 'compare' | 'community' | 'assistant' | 'admin' | 'saved' | 'professional' | 'billing' | 'coverage';
 
 interface NavbarProps {
   activeTab: Tab;

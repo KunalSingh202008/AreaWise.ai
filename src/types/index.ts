@@ -130,6 +130,23 @@ export interface PlaceSummary {
   source: GeographySource;
 }
 
+export interface CoverageCounts {
+  places: number;
+  postalEntries: number;
+  pincodes: number;
+  facilities: number;
+  reviewedPlaces: number;
+  observations: number;
+  lastObservationDate: string | null;
+}
+
+export interface CatalogueCoverage {
+  region: string | null;
+  totals: CoverageCounts;
+  areas: (CoverageCounts & { name: string | null })[];
+  sources: { name: string; sourceUrl: string; licenseUrl: string; importedAt: string }[];
+}
+
 export interface PublishedObservation {
   id: string;
   metric: string;

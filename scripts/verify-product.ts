@@ -65,6 +65,18 @@ const chennai = 'geo-1264527';
 
 async function publicProduct(base: string) {
   await request(base, '/ready');
+  const country = await request(base, '/locations/coverage');
+  assert.ok(country.totals.places > 500000);
+  assert.ok(country.totals.pincodes > 19000);
+  assert.equal(country.sources.length, 2);
+  assert.ok(country.sources.every((source: { licenseUrl: string }) => source.licenseUrl === 'https://creativecommons.org/licenses/by/4.0/'));
+  assert.ok(country.areas.some((area: { name: string }) => area.name === 'Uttar Pradesh'));
+  const region = await request(base, '/locations/coverage?region=Uttar%20Pradesh');
+  assert.ok(region.areas.some((area: { name: string }) => area.name === 'Varanasi'));
+  assert.ok(region.totals.places > 0 && region.totals.places < country.totals.places);
+  await request(base, '/locations/coverage?region=Unknown', { status: 404 });
+  await request(base, '/locations/coverage?region=a&region=b', { status: 400 });
+  console.log('PASS national and district coverage counts and dated source snapshots');
   const featured = await request(base, '/locations/search');
   assert.ok(featured.total >= 4);
   const results = await request(base, '/locations/search?q=Sigra');
@@ -201,12 +213,12 @@ async function billingProduct(base: string, db: Pool, author: Account, reader: A
   // These handles exist only in the disposable provider-event test database. No provider calls are made.
   await db.query(`
     INSERT INTO billing_checkouts (id, user_id, request_key, kind, sku, title, amount_paise, provider_id, place_id, state)
-    VALUES ($1,$2,$3,'report','test-report','Fixture evidence report',1000,$4,$5,'checkout')
-  `, [reportCheckout, userId, randomUUID(), orderId, sigra]);
+    VALUES ($1,$2,$3,'report','test-report','Fixture evidence report',1000,NULL,$4,'preparing')
+  `, [reportCheckout, userId, randomUUID(), sigra]);
   await db.query(`
     INSERT INTO billing_checkouts (id, user_id, request_key, kind, sku, title, amount_paise, provider_id, provider_plan_id, tier, state)
-    VALUES ($1,$2,$3,'subscription','test-pro','Fixture Professional',2000,$4,'plan_TestOnly','professional','checkout')
-  `, [subscriptionCheckout, userId, randomUUID(), subId]);
+    VALUES ($1,$2,$3,'subscription','test-pro','Fixture Professional',2000,NULL,'plan_TestOnly','professional','needs_review')
+  `, [subscriptionCheckout, userId, randomUUID()]);
   const captureAt = Math.floor(Date.now() / 1000);
   const payment = { id: paymentId, order_id: orderId, amount: 1000, currency: 'INR', status: 'captured', captured: true, created_at: captureAt };
   async function event(id: string, type: string, payload: object, signed = true, status = 200) {
@@ -226,8 +238,14 @@ async function billingProduct(base: string, db: Pool, author: Account, reader: A
   const authOnly = { account: author };
   await request(base, `/billing/checkouts/${reportCheckout}/report.csv`, { ...authOnly, status: 404 });
   await event('bad-' + nonce, 'payment.captured', { payment: { entity: payment } }, false, 401);
-  const capture = await event('capture-' + nonce, 'payment.captured', { payment: { entity: payment } });
+  const paymentOnly = { payment: { entity: payment } };
+  const paidOrder = { ...paymentOnly, order: { entity: {
+    id: orderId, receipt: 'aw_' + reportCheckout.replaceAll('-', ''), amount: 1000, currency: 'INR',
+  } } };
+  await event('capture-' + nonce, 'payment.captured', paymentOnly, true, 503);
+  const capture = await event('paid-' + nonce, 'order.paid', paidOrder);
   assert.equal(capture.applied, true);
+  assert.equal((await event('capture-' + nonce, 'payment.captured', paymentOnly)).applied, false);
   assert.equal((await event('capture-' + nonce, 'payment.captured', { payment: { entity: payment } })).duplicate, true);
   await event('latefail-' + nonce, 'payment.failed', { payment: { entity: { ...payment, status: 'failed' } } });
   assert.equal((await request(base, '/billing/history', authOnly)).charges.length, 1);
@@ -238,14 +256,17 @@ async function billingProduct(base: string, db: Pool, author: Account, reader: A
     id: 'rfnd_Test' + nonce, payment_id: paymentId, amount: 1000, status: 'processed', created_at: captureAt,
   } } });
   await request(base, `/billing/checkouts/${reportCheckout}/report.csv`, { ...authOnly, status: 404 });
-  const entity = { id: subId, plan_id: 'plan_TestOnly', current_end: captureAt + 86400 };
+  const entity = {
+    id: subId, plan_id: 'plan_TestOnly', current_end: captureAt + 86400,
+    notes: { areawise_checkout_id: subscriptionCheckout },
+  };
   await event('sub-' + nonce, 'subscription.charged', {
     subscription: { entity }, payment: { entity: { ...payment, id: 'pay_Sub' + nonce, order_id: undefined, amount: 2000 } },
   });
   assert.equal((await request(base, '/billing/history', authOnly)).tier, 'professional');
   await event('cancel-' + nonce, 'subscription.cancelled', { subscription: { entity } });
   assert.equal((await request(base, '/billing/history', authOnly)).tier, null);
-  console.log('PASS isolated signed payment events, replay handling, owner-only export, refund and subscription entitlement');
+  console.log('PASS early signed payment reconciliation, event replay, owner-only export, refund and subscription entitlement');
 }
 
 let created = false;

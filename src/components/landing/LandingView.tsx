@@ -89,7 +89,9 @@ export function LandingView({ places, onSelectLocality, onOpenCompare, onOpenAss
       {places.length > 0 && (
         <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <h2 className="text-2xl font-bold">Explore Indian cities</h2>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Coverage varies by place. Each profile shows which evidence is available.</p>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            Each profile shows which evidence is available. <a href="/coverage" className="underline underline-offset-2">Check data coverage by state and district.</a>
+          </p>
           <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {places.map((place) => (
               <li key={place.id}>

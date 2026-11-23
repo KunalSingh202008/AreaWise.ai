@@ -28,7 +28,7 @@ export const createPool = (): Pool => {
 
     // Prevent unhandled pool-level errors from crashing the application
     global._postgresPool.on('error', (err) => {
-      console.error('Unexpected error on idle SQL pool client:', err);
+      console.error(JSON.stringify({ event: 'database.idle_client_error', kind: err.name }));
     });
   }
   return global._postgresPool;

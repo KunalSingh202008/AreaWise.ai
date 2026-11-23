@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { Router, raw } from 'express';
+import type { PoolClient } from 'pg';
 import { pool } from '../src/db';
 import { resolveAccount, spendDailyQuota } from './accounts';
 import { requireSignedIn, session } from './auth';
@@ -7,6 +8,8 @@ import { findPlace, getPublicLocality } from './geography';
 import { HttpError, route, validText } from './http';
 import { isValidRazorpaySignature, razorpaySandbox, sandboxCredentials } from './razorpay';
 import { renderEvidenceCsv } from './reports';
+
+const uuidPattern = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 
 type Tier = 'plus' | 'premium' | 'professional';
 interface Plan {
@@ -71,7 +74,7 @@ export async function getSandboxTier(userId: number): Promise<Tier | null> {
 }
 
 function checkoutResponse(row: Checkout, key: string) {
-  if (!row.provider_id || row.state !== 'checkout') {
+  if (!row.provider_id || !['checkout', 'payment_failed'].includes(row.state)) {
     throw new HttpError(409, 'This checkout cannot be opened. Check your test billing history.');
   }
   return {
@@ -90,7 +93,7 @@ billingRoutes.use(requireSignedIn);
 billingRoutes.post('/checkouts', route(async (req, res) => {
   const key = req.get('Idempotency-Key');
   const { code, placeId } = req.body ?? {};
-  if (!key || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(key)) {
+  if (!key || !uuidPattern.test(key)) {
     throw new HttpError(400, 'A checkout request identifier is required.');
   }
   const plan = configuredPlans().find((item) => item.code === code);
@@ -120,8 +123,11 @@ billingRoutes.post('/checkouts', route(async (req, res) => {
       ? await provider.createOrder(plan.amountPaise, 'aw_' + requestId.replaceAll('-', ''))
       : await provider.createSubscription(plan.providerPlanId!, plan.amountPaise, plan.cycles!, requestId);
     const { rows: [checkout] } = await pool.query<Checkout>(`
-      UPDATE billing_checkouts SET provider_id = $2, state = 'checkout' WHERE id = $1 RETURNING *
+      UPDATE billing_checkouts
+      SET provider_id = $2, state = CASE WHEN state = 'preparing' THEN 'checkout' ELSE state END
+      WHERE id = $1 AND (provider_id IS NULL OR provider_id = $2) RETURNING *
     `, [requestId, providerId]);
+    if (!checkout) throw new HttpError(409, 'Check the payment status in your test billing history.');
     return res.status(201).json(checkoutResponse(checkout, credentials.key));
   } catch (error) {
     await pool.query("UPDATE billing_checkouts SET state = 'needs_review' WHERE id = $1 AND state = 'preparing'", [requestId]);
@@ -189,6 +195,8 @@ interface Entity {
   current_end?: unknown;
   created_at?: unknown;
   captured?: unknown;
+  receipt?: unknown;
+  notes?: Record<string, unknown>;
 }
 interface ProviderEvent {
   event: string;
@@ -204,6 +212,66 @@ function amount(value: unknown): value is number {
 }
 function timestamp(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value < 4102444800;
+}
+
+const subscriptionStates = new Map([
+  ['subscription.pending', 'pending'], ['subscription.halted', 'pending'],
+  ['subscription.paused', 'paused'], ['subscription.cancelled', 'cancelled'],
+  ['subscription.completed', 'completed'], ['subscription.resumed', 'active'],
+]);
+const orderEvents = new Set(['payment.captured', 'order.paid', 'payment.failed']);
+
+async function eventCheckout(client: PoolClient, event: ProviderEvent): Promise<Checkout | undefined> {
+  const subscription = event.payload.subscription?.entity;
+  const order = event.payload.order?.entity;
+  const payment = event.payload.payment?.entity;
+  const isSubscriptionEvent = event.event === 'subscription.charged' || subscriptionStates.has(event.event);
+  const reference = isSubscriptionEvent && providerId(subscription?.id, 'sub') ? subscription.id
+    : orderEvents.has(event.event) && providerId(payment?.order_id, 'order') ? payment.order_id : null;
+  if (!reference) return;
+
+  const result = await client.query<Checkout>('SELECT * FROM billing_checkouts WHERE provider_id = $1 FOR UPDATE', [reference]);
+  if (result.rows[0]) return result.rows[0];
+
+  // The provider can send a signed event before its API response reaches the checkout handler.
+  const notesId = subscription?.notes?.areawise_checkout_id;
+  const receipt = order?.receipt;
+  if (isSubscriptionEvent && typeof notesId === 'string' && uuidPattern.test(notesId) &&
+      providerId(subscription?.plan_id, 'plan')) {
+    const { rows } = await client.query<Checkout>(`
+      UPDATE billing_checkouts SET provider_id = $2,
+        state = CASE WHEN provider_id IS NULL THEN 'checkout' ELSE state END
+      WHERE id = $1 AND provider_plan_id = $3 AND kind = 'subscription'
+        AND (provider_id = $2 OR (provider_id IS NULL AND state IN ('preparing', 'needs_review')))
+      RETURNING *
+    `, [notesId, reference, subscription.plan_id]);
+    return rows[0];
+  }
+  if (!isSubscriptionEvent && order?.id === reference && typeof receipt === 'string' &&
+      /^aw_[a-f0-9]{32}$/.test(receipt) && amount(order.amount) && order.currency === 'INR') {
+    const { rows } = await client.query<Checkout>(`
+      UPDATE billing_checkouts SET provider_id = $2,
+        state = CASE WHEN provider_id IS NULL THEN 'checkout' ELSE state END
+      WHERE id = $1 AND kind = 'report' AND amount_paise = $3
+        AND (provider_id = $2 OR (provider_id IS NULL AND state IN ('preparing', 'needs_review')))
+      RETURNING *
+    `, [receipt.slice(3), reference, order.amount]);
+    return rows[0];
+  }
+
+  // A payment-only delivery may omit the receipt. A 503 leaves the event eligible for replay.
+  if (!isSubscriptionEvent) {
+    const { rowCount } = await client.query(`
+      SELECT 1 FROM billing_checkouts WHERE kind = 'report' AND provider_id IS NULL
+        AND state IN ('preparing', 'needs_review') AND created_at > now() - interval '5 minutes'
+        AND amount_paise = $1 LIMIT 1
+    `, [amount(payment?.amount) && payment?.currency === 'INR' ? payment.amount : null]);
+    if (rowCount) throw new HttpError(503, 'The checkout is still being reconciled. Retry this event.');
+    const { rows } = await client.query<Checkout>(
+      'SELECT * FROM billing_checkouts WHERE provider_id = $1 FOR UPDATE', [reference],
+    );
+    return rows[0];
+  }
 }
 
 export async function applySandboxEvent(eventId: string, digest: string, event: ProviderEvent) {
@@ -224,11 +292,7 @@ export async function applySandboxEvent(eventId: string, digest: string, event: 
     const payment = event.payload.payment?.entity;
     const subscription = event.payload.subscription?.entity;
     const refund = event.payload.refund?.entity;
-    const providerRef = providerId(subscription?.id, 'sub') ? subscription.id
-      : providerId(payment?.order_id, 'order') ? payment.order_id : null;
-    const { rows: [checkout] } = providerRef ? await client.query<Checkout>(
-      'SELECT * FROM billing_checkouts WHERE provider_id = $1 FOR UPDATE', [providerRef],
-    ) : { rows: [] };
+    const checkout = await eventCheckout(client, event);
     let applied = false;
 
     if (event.event === 'refund.processed' && providerId(refund?.id, 'rfnd') && providerId(refund?.payment_id, 'pay') &&
@@ -271,12 +335,7 @@ export async function applySandboxEvent(eventId: string, digest: string, event: 
       applied = true;
     }
 
-    const stateEvents: Record<string, string> = {
-      'subscription.pending': 'pending', 'subscription.halted': 'pending',
-      'subscription.paused': 'paused', 'subscription.cancelled': 'cancelled', 'subscription.completed': 'completed',
-      'subscription.resumed': 'active',
-    };
-    const state = Object.hasOwn(stateEvents, event.event) ? stateEvents[event.event] : undefined;
+    const state = subscriptionStates.get(event.event);
     if (state && checkout?.kind === 'subscription' && subscription?.plan_id === checkout.provider_plan_id &&
         event.created_at >= Number(checkout.state_event_at) && !['cancelled','completed'].includes(checkout.state)) {
       await client.query('UPDATE billing_checkouts SET state = $2, state_event_at = $3 WHERE id = $1',

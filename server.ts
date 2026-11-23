@@ -7,13 +7,13 @@ import express, { Request, Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
-  discoverPlaces, getGeographyImports, getPublicLocality,
+  discoverPlaces, getCatalogueCoverage, getGeographyImports, getPublicLocality,
   getNearbyCatalogueFacilities, inspectCoordinate,
 } from './server/geography';
 import { getCommunityReportsFromDb } from './src/db/repositories/communityReportRepository';
 import { accountRoutes } from './server/accounts';
 import { communityRoutes, listModerationReports } from './server/community';
-import { HttpError, route } from './server/http';
+import { HttpError, logRequestError, route } from './server/http';
 import { renderEvidenceBrief } from './server/reports';
 import { billingRoutes, billingWebhook, sandboxBillingSummary } from './server/billing';
 import { workspaceRoutes } from './server/workspaces';
@@ -99,7 +99,7 @@ app.post('/api/v1/locations/resolve', async (req: Request, res: Response) => {
     const resolved = await inspectCoordinate({ lat, lng }, label);
     return res.json(resolved);
   } catch (error) {
-    console.error('Error in /api/v1/locations/resolve:', error);
+    logRequestError(res, error);
     return res.status(503).json({ error: 'Location resolution is temporarily unavailable.' });
   }
 });
@@ -118,10 +118,21 @@ app.get('/api/v1/locations/search', async (req: Request, res: Response) => {
     return res.json({ total: results.length, results });
 
   } catch (error) {
-    console.error('Error in /api/v1/locations/search:', error);
+    logRequestError(res, error);
     return res.status(503).json({ error: 'The geography catalogue is temporarily unavailable.' });
   }
 });
+
+app.get('/api/v1/locations/coverage', route(async (req, res) => {
+  const { region } = req.query;
+  if (region !== undefined && (typeof region !== 'string' || !region.trim() || region.length > 150)) {
+    throw new HttpError(400, 'Use a single state or union territory name.');
+  }
+  const coverage = await getCatalogueCoverage(typeof region === 'string' ? region.trim() : null);
+  if (!coverage.sources.length) throw new HttpError(503, 'The geography catalogue is unavailable.');
+  if (coverage.region && !coverage.areas.length) throw new HttpError(404, 'This region is unavailable in the catalogue.');
+  res.json(coverage);
+}));
 
 // 3. Locality Details (PostgreSQL backed)
 app.get('/api/v1/locations/:id', async (req: Request, res: Response) => {
@@ -135,7 +146,7 @@ app.get('/api/v1/locations/:id', async (req: Request, res: Response) => {
     }
     return res.json(locality);
   } catch (error) {
-    console.error('Error in /api/v1/locations/:id:', error);
+    logRequestError(res, error);
     return res.status(500).json({ error: 'Failed to fetch locality' });
   }
 });
@@ -156,7 +167,7 @@ app.get('/api/v1/locations/:id/score', async (req: Request, res: Response) => {
     }
     return res.json(locality.scores);
   } catch (error) {
-    console.error('Error in /api/v1/locations/:id/score:', error);
+    logRequestError(res, error);
     return res.status(500).json({ error: 'Failed to fetch locality score' });
   }
 });
@@ -170,7 +181,7 @@ app.get('/api/v1/locations/:id/indicators', async (req: Request, res: Response) 
     }
     return res.json(locality.indicators);
   } catch (error) {
-    console.error('Error in /api/v1/locations/:id/indicators:', error);
+    logRequestError(res, error);
     return res.status(500).json({ error: 'Failed to fetch indicators' });
   }
 });
@@ -198,7 +209,7 @@ app.get('/api/v1/locations/:id/facilities', async (req: Request, res: Response) 
 
     return res.json(facilitiesList);
   } catch (error) {
-    console.error('Error in /api/v1/locations/:id/facilities:', error);
+    logRequestError(res, error);
     return res.status(500).json({ error: 'Failed to fetch facilities' });
   }
 });
@@ -218,7 +229,7 @@ app.get('/api/v1/locations/:id/map', async (req: Request, res: Response) => {
       communityReports: reports,
     });
   } catch (error) {
-    console.error('Error in /api/v1/locations/:id/map:', error);
+    logRequestError(res, error);
     return res.status(500).json({ error: 'Failed to fetch map data' });
   }
 });
@@ -269,7 +280,7 @@ app.post('/api/v1/comparisons', async (req: Request, res: Response) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Error in /api/v1/comparisons:', error);
+    logRequestError(res, error);
     return res.status(500).json({ error: 'Failed to process comparison' });
   }
 });
@@ -278,7 +289,8 @@ app.post('/api/v1/comparisons', async (req: Request, res: Response) => {
 app.get('/api/v1/admin/data-sources', async (_req, res) => {
   try {
     return res.json(await getGeographyImports());
-  } catch {
+  } catch (error) {
+    logRequestError(res, error);
     return res.status(503).json({ error: 'Dataset records are temporarily unavailable.' });
   }
 });
@@ -289,7 +301,7 @@ app.get('/api/v1/admin/scoring-weights', async (_req: Request, res: Response) =>
     const weights = await getActiveScoringWeightsFromDb();
     return res.json(weights);
   } catch (error) {
-    console.error('Error fetching scoring weights:', error);
+    logRequestError(res, error);
     return res.status(500).json({ error: 'Failed to fetch scoring weights' });
   }
 });
@@ -311,7 +323,7 @@ app.get('/api/v1/admin/audit-logs', async (_req: Request, res: Response) => {
     const logs = await getAuditLogsFromDb(100);
     return res.json(logs);
   } catch (error) {
-    console.error('Error fetching audit logs:', error);
+    logRequestError(res, error);
     return res.status(500).json({ error: 'Failed to fetch audit logs' });
   }
 });
@@ -325,10 +337,19 @@ app.get('/api/v1/health', (_req, res) => {
 
 app.get('/api/v1/ready', async (_req, res) => {
   try {
-    const { rows: [row] } = await pool.query<{ has_schema: boolean }>(`
-      SELECT PostGIS_Version(), to_regclass('public.geo_places') IS NOT NULL AS has_schema
+    const { rows: [row] } = await pool.query<{ schema_ready: boolean; catalogue_ready: boolean }>(`
+      SELECT PostGIS_Version(),
+        to_regclass('public.geo_places') IS NOT NULL AND
+        to_regclass('public.evidence_publications') IS NOT NULL AND
+        to_regclass('public.account_comparisons') IS NOT NULL AND
+        to_regclass('public.service_usage_daily') IS NOT NULL AND
+        to_regclass('public.billing_events') IS NOT NULL AND
+        to_regclass('public.research_workspaces') IS NOT NULL AS schema_ready,
+        count(*) = 2 AS catalogue_ready
+      FROM dataset_imports
+      WHERE active AND dataset IN ('geonames-in', 'geonames-in-postal')
     `);
-    if (row?.has_schema) return res.json({ status: 'ready' });
+    if (row?.schema_ready && row.catalogue_ready) return res.json({ status: 'ready' });
   } catch {
     // Readiness failing does not affect liveness or expose connection details.
   }
@@ -343,14 +364,11 @@ app.use('/api', (error: unknown, _req: Request, res: Response, _next: express.Ne
   if (error instanceof HttpError) {
     return res.status(error.status).json({ error: error.message });
   }
-  const status = (error as { status?: number }).status;
+  const status = (error as { status?: number } | null | undefined)?.status;
   if (status === 400 || status === 413) {
     return res.status(status).json({ error: status === 400 ? 'Invalid JSON body' : 'Request body too large' });
   }
-  console.error(JSON.stringify({
-    event: 'http.error', requestId: res.getHeader('X-Request-Id'),
-    kind: error instanceof Error ? error.name : 'UnknownError',
-  }));
+  logRequestError(res, error);
   return res.status(500).json({ error: 'Internal server error' });
 });
 
@@ -375,7 +393,9 @@ async function startServer() {
       const acceptsHtml = req.get('accept')?.split(',').some(
         (type) => type.split(';')[0].trim().toLowerCase() === 'text/html' && !/;\s*q=0(?:\.0+)?\s*(?:;|$)/i.test(type)
       );
-      if (!acceptsHtml || path.extname(req.path) || /^\/assets(?:\/|$)/.test(req.path)) {
+      const pagePath = /^\/(?:localities|map|community|copilot)(?:\/[a-z0-9-]+)?\/?$/i.test(req.path) ||
+        /^\/(?:compare|admin|saved|professional|plans|coverage)\/?$/i.test(req.path);
+      if (!acceptsHtml || !pagePath) {
         return res.sendStatus(404);
       }
       return res.sendFile(path.join(dist, 'index.html'));

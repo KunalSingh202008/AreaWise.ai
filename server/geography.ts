@@ -1,6 +1,7 @@
 import { pool } from '../src/db';
 import type {
-  Coordinates, Facility, GeographySource, Locality, LocalityCategoryScores, PlaceSummary, PublishedObservation,
+  CatalogueCoverage, Coordinates, CoverageCounts, Facility, GeographySource,
+  Locality, LocalityCategoryScores, PlaceSummary, PublishedObservation,
 } from '../src/types';
 import { calculateAreaScore, calculateProfileScores } from './scoring';
 
@@ -170,6 +171,41 @@ export async function inspectCoordinate(center: Coordinates, label?: string): Pr
     strengths: [], cautions: [], indicators: [], facilities, isCustomResolved: true,
     missingDataNotes: ['No locality boundary or AreaScore has been assigned to this point.'],
   };
+}
+
+export async function getCatalogueCoverage(region: string | null): Promise<CatalogueCoverage> {
+  const group = region === null ? 'p.state' : 'p.district';
+  const results = await Promise.all([
+    pool.query<CoverageCounts & { name: string | null; is_total: boolean }>(`
+      WITH evidence_by_place AS (
+        SELECT e.locality_id, count(*)::int AS observations, max(e.observation_date) AS observation_date
+        FROM evidence_records e JOIN evidence_publications ep ON ep.evidence_id = e.id
+        WHERE e.verification_status = 'verified'
+        GROUP BY e.locality_id
+      )
+      SELECT ${group} AS name, GROUPING(${group}) = 1 AS is_total,
+        count(*) FILTER (WHERE p.facility_category IS NULL AND p.pincode IS NULL)::int AS places,
+        count(p.pincode)::int AS "postalEntries",
+        count(DISTINCT p.pincode)::int AS pincodes,
+        count(p.facility_category)::int AS facilities,
+        count(e.locality_id)::int AS "reviewedPlaces",
+        COALESCE(sum(e.observations), 0)::int AS observations,
+        max(e.observation_date)::text AS "lastObservationDate"
+      FROM geo_places p JOIN dataset_imports i ON i.id = p.import_id AND i.active
+      LEFT JOIN evidence_by_place e ON e.locality_id = p.place_id AND p.facility_category IS NULL
+      WHERE $1::text IS NULL OR p.state = $1
+      GROUP BY GROUPING SETS ((), (${group}))
+      ORDER BY is_total DESC, name NULLS LAST
+    `, [region]),
+    pool.query<CatalogueCoverage['sources'][number]>(`
+      SELECT s.name, i.original_url AS "sourceUrl", i.license_url AS "licenseUrl", i.imported_at AS "importedAt"
+      FROM dataset_imports i JOIN data_sources s ON s.id = i.source_id
+      WHERE i.active
+      ORDER BY i.dataset
+    `),
+  ]);
+  const [totals, ...areas] = results[0].rows.map(({ is_total: _isTotal, ...area }) => area);
+  return { region, totals, areas, sources: results[1].rows };
 }
 
 export async function getGeographyImports() {

@@ -35,11 +35,15 @@ await withTestServer('production', async (base) => {
   assert.deepEqual(await apiMiss.json(), { error: 'API route not found' });
   assert.equal((await fetch(base + '/assets/missing-no-extension', browser)).status, 404);
   assert.equal((await fetch(base + '/favicon-missing.ico', browser)).status, 404);
+  assert.equal((await fetch(base + '/unavailable-page', browser)).status, 404);
+  assert.equal((await fetch(base + '/assets/aistudio/Paste_November_07__2026_-_6_19PM_fc098e1e', browser)).status, 404);
   assert.equal((await fetch(base + '/localities/sigra')).status, 404);
   assert.equal((await fetch(base + '/localities/sigra', { headers: { Accept: 'text/html;q=0' } })).status, 404);
   const deepLink = await fetch(base + '/localities/sigra', browser);
   assert.equal(deepLink.status, 200);
   assert.match(await deepLink.text(), /id="root"/);
+  assert.equal((await fetch(base + '/professional', browser)).status, 200);
+  assert.equal((await fetch(base + '/coverage', browser)).status, 200);
   console.log('PASS API and asset 404s and HTML navigation fallback');
 
   const malformed = await fetch(base + '/api/v1/locations/resolve', {

@@ -7,6 +7,7 @@ export function Footer() {
           <p>Independent locality research for India</p>
         </div>
         <ul className="flex flex-wrap gap-4">
+          <li><a href="/coverage" className="underline">Data coverage</a></li>
           <li><a href="https://www.geonames.org/" className="underline" target="_blank" rel="noreferrer">GeoNames</a></li>
           <li><a href="https://creativecommons.org/licenses/by/4.0/" className="underline" target="_blank" rel="noreferrer">CC BY 4.0</a></li>
           <li><a href="https://www.openstreetmap.org/copyright" className="underline" target="_blank" rel="noreferrer">OpenStreetMap</a></li>
