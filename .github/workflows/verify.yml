@@ -58,7 +58,7 @@ jobs:
           docker build --tag areawise-verification .
           container_id="$(docker run --detach --publish 127.0.0.1:48080:8080 areawise-verification)"
           trap 'docker logs "$container_id"; docker stop "$container_id"; docker rm "$container_id"' EXIT
-          curl --fail --silent --show-error --retry 20 --retry-delay 1 --retry-connrefused --max-time 3 \
+          curl --fail --silent --show-error --retry 20 --retry-delay 1 --retry-all-errors --max-time 3 \
             http://127.0.0.1:48080/api/v1/health
           curl --fail --silent --show-error -H 'Accept: text/html' \
             http://127.0.0.1:48080/coverage | grep -Fq 'id="root"'
