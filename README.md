@@ -1,6 +1,6 @@
 # AreaWise AI
 
-AreaWise AI is an evidence-based locality research application for India. It uses React and Vite for the client, Express for the API, and PostgreSQL with PostGIS for geography and persistence. India-wide place and PIN search, coverage by source region and district, proximity maps, comparisons, and printable evidence briefs run from imported GeoNames data. Account features use Firebase Authentication. The Copilot can use Gemini when configured, with a source-only response when Gemini is unavailable.
+AreaWise AI is an evidence-based locality research application for India. It uses React and Vite for the client, Express for the API, and PostgreSQL with PostGIS for geography and persistence. India-wide place and PIN search, coverage by state, union territory, and publisher district, proximity maps, comparisons, and printable evidence briefs run from imported GeoNames data. Account features use Firebase Authentication. The Copilot can use Gemini when configured, with a source-only response when Gemini is unavailable.
 
 The current catalogue contains geographic points and postal entries. Check **Data coverage** in the app to see where reviewed observations are available. The approved AreaScore methodology is `v1.3.0-evidence-grounded`. Eligibility includes at least 50% indicator coverage and 60% active category weight. Confidence is calculated separately from source quality and freshness.
 

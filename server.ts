@@ -10,6 +10,7 @@ import {
   discoverPlaces, getCatalogueCoverage, getGeographyImports, getPublicLocality,
   getNearbyCatalogueFacilities, inspectCoordinate,
 } from './server/geography';
+import { resolveCoverageRegion } from './server/india-regions';
 import { getCommunityReportsFromDb } from './src/db/repositories/communityReportRepository';
 import { accountRoutes } from './server/accounts';
 import { communityRoutes, listModerationReports } from './server/community';
@@ -128,7 +129,9 @@ app.get('/api/v1/locations/coverage', route(async (req, res) => {
   if (region !== undefined && (typeof region !== 'string' || !region.trim() || region.length > 150)) {
     throw new HttpError(400, 'Use a single state or union territory name.');
   }
-  const coverage = await getCatalogueCoverage(typeof region === 'string' ? region.trim() : null);
+  const requestedRegion = typeof region === 'string' ? resolveCoverageRegion(region.trim()) : null;
+  if (requestedRegion === undefined) throw new HttpError(404, 'This region is unavailable in the catalogue.');
+  const coverage = await getCatalogueCoverage(requestedRegion);
   if (!coverage.sources.length) throw new HttpError(503, 'The geography catalogue is unavailable.');
   if (coverage.region && !coverage.areas.length) throw new HttpError(404, 'This region is unavailable in the catalogue.');
   res.json(coverage);

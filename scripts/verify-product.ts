@@ -5,6 +5,7 @@ import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { parseTestCluster } from './test-db-config';
 import { withTestServer } from './http-test-server';
+import type { CatalogueCoverage } from '../src/types';
 
 const cluster = parseTestCluster();
 const template = process.env.AREAWISE_CATALOGUE_TEST_TEMPLATE || 'areawise_preview';
@@ -65,18 +66,32 @@ const chennai = 'geo-1264527';
 
 async function publicProduct(base: string) {
   await request(base, '/ready');
-  const country = await request(base, '/locations/coverage');
+  const country: CatalogueCoverage = await request(base, '/locations/coverage');
   assert.ok(country.totals.places > 500000);
   assert.ok(country.totals.pincodes > 19000);
   assert.equal(country.sources.length, 2);
   assert.ok(country.sources.every((source: { licenseUrl: string }) => source.licenseUrl === 'https://creativecommons.org/licenses/by/4.0/'));
-  assert.ok(country.areas.some((area: { name: string }) => area.name === 'Uttar Pradesh'));
+  assert.equal(country.areas.filter((area) => area.name !== null).length, 36);
+  for (const count of ['places', 'postalEntries', 'facilities'] as const) {
+    assert.equal(country.areas.reduce((sum, area) => sum + area[count], 0), country.totals[count]);
+  }
+  assert.ok(country.areas.some((area) => area.name === 'Arunachal Pradesh' && area.places > 0 && area.postalEntries > 0));
+  const delhi = await request(base, '/locations/coverage?region=Delhi');
+  assert.equal(delhi.region, 'National Capital Territory of Delhi');
+  for (const [region, districts] of [['Ladakh', ['Leh', 'Kargil']], ['Telangana', ['Peddapalli']]] as const) {
+    const territory: CatalogueCoverage = await request(base, `/locations/coverage?region=${region}`);
+    for (const district of districts) {
+      assert.ok(territory.areas.some((area) => area.name === district && area.postalEntries > 0));
+    }
+  }
+  const jammu: CatalogueCoverage = await request(base, '/locations/coverage?region=Jammu%20%26%20Kashmir');
+  assert.ok(jammu.areas.every((area) => area.name !== 'Kargil' && area.name !== 'Leh'));
   const region = await request(base, '/locations/coverage?region=Uttar%20Pradesh');
   assert.ok(region.areas.some((area: { name: string }) => area.name === 'Varanasi'));
   assert.ok(region.totals.places > 0 && region.totals.places < country.totals.places);
   await request(base, '/locations/coverage?region=Unknown', { status: 404 });
   await request(base, '/locations/coverage?region=a&region=b', { status: 400 });
-  console.log('PASS national and district coverage counts and dated source snapshots');
+  console.log('PASS all 36 states and union territories, district coverage, and dated source snapshots');
   const featured = await request(base, '/locations/search');
   assert.ok(featured.total >= 4);
   const results = await request(base, '/locations/search?q=Sigra');

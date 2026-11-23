@@ -47,7 +47,7 @@ function CountryCoverage({ country }: { country: CatalogueCoverage }) {
           State or union territory
           <select value={region} onChange={(event) => setRegion(event.target.value)}
             className="rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-600 dark:bg-slate-900">
-            <option value="">All source regions</option>
+            <option value="">All states and union territories</option>
             {country.areas.flatMap(({ name }) => name ? <option key={name} value={name}>{name}</option> : [])}
           </select>
         </label>
@@ -76,7 +76,7 @@ function DistrictCoverage({ region }: { region: string }) {
 }
 
 function CoverageTable({ coverage }: { coverage: CatalogueCoverage }) {
-  const label = coverage.region ? 'District' : 'Source region';
+  const label = coverage.region ? 'Source district' : 'State or union territory';
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700" role="region" aria-label={`${label} coverage`} tabIndex={0}>
       <table className="w-full text-left text-sm">
@@ -91,7 +91,7 @@ function CoverageTable({ coverage }: { coverage: CatalogueCoverage }) {
         <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
           {coverage.areas.map((area) => (
             <tr key={area.name ?? ''}>
-              <th scope="row" className="p-3 font-medium">{area.name ?? 'Unassigned by source'}</th>
+              <th scope="row" className="p-3 font-medium">{area.name ?? 'Unassigned'}</th>
               {columns.map(([metric]) => <td key={metric} className="p-3 text-right tabular-nums">{count.format(area[metric])}</td>)}
               <td className="p-3 whitespace-nowrap">{area.lastObservationDate ?? 'Unavailable'}</td>
             </tr>
@@ -109,7 +109,7 @@ export function CoverageView() {
       <header className="space-y-2">
         <h1 className="text-3xl font-black">India data coverage</h1>
         <p className="max-w-3xl text-sm text-slate-600 dark:text-slate-400">
-          Counts come from active source snapshots. Region and district labels come from those sources and can differ from current administrative names. Reviewed observations are listed on individual place profiles. AreaScores require enough eligible indicator data.
+          Counts come from active source snapshots. State and union territory labels are matched to government names where possible. District labels follow the publisher. Reviewed observations are listed on individual place profiles. AreaScores require enough eligible indicator data.
         </p>
       </header>
       {!result && <p role="status">Loading data coverage…</p>}

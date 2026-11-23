@@ -4,6 +4,7 @@ import type {
   Locality, LocalityCategoryScores, PlaceSummary, PublishedObservation,
 } from '../src/types';
 import { calculateAreaScore, calculateProfileScores } from './scoring';
+import { postalRegionCorrectionsJson, regionNamesJson } from './india-regions';
 
 interface PlaceRow {
   place_id: string;
@@ -174,7 +175,8 @@ export async function inspectCoordinate(center: Coordinates, label?: string): Pr
 }
 
 export async function getCatalogueCoverage(region: string | null): Promise<CatalogueCoverage> {
-  const group = region === null ? 'p.state' : 'p.district';
+  const state = 'COALESCE(postal_region.region, region_names.region)';
+  const group = region === null ? state : 'p.district';
   const results = await Promise.all([
     pool.query<CoverageCounts & { name: string | null; is_total: boolean }>(`
       WITH evidence_by_place AS (
@@ -192,11 +194,15 @@ export async function getCatalogueCoverage(region: string | null): Promise<Catal
         COALESCE(sum(e.observations), 0)::int AS observations,
         max(e.observation_date)::text AS "lastObservationDate"
       FROM geo_places p JOIN dataset_imports i ON i.id = p.import_id AND i.active
+      LEFT JOIN jsonb_each_text($2::jsonb) AS region_names(source_state, region)
+        ON p.state = region_names.source_state
+      LEFT JOIN jsonb_to_recordset($3::jsonb) AS postal_region(source_state text, source_district text, region text)
+        ON p.pincode IS NOT NULL AND p.state = postal_region.source_state AND p.district = postal_region.source_district
       LEFT JOIN evidence_by_place e ON e.locality_id = p.place_id AND p.facility_category IS NULL
-      WHERE $1::text IS NULL OR p.state = $1
+      WHERE $1::text IS NULL OR ${state} = $1
       GROUP BY GROUPING SETS ((), (${group}))
       ORDER BY is_total DESC, name NULLS LAST
-    `, [region]),
+    `, [region, regionNamesJson, postalRegionCorrectionsJson]),
     pool.query<CatalogueCoverage['sources'][number]>(`
       SELECT s.name, i.original_url AS "sourceUrl", i.license_url AS "licenseUrl", i.imported_at AS "importedAt"
       FROM dataset_imports i JOIN data_sources s ON s.id = i.source_id
@@ -204,7 +210,8 @@ export async function getCatalogueCoverage(region: string | null): Promise<Catal
       ORDER BY i.dataset
     `),
   ]);
-  const [totals, ...areas] = results[0].rows.map(({ is_total: _isTotal, ...area }) => area);
+  const [{ is_total: _isTotal, name: _totalName, ...totals }, ...areaRows] = results[0].rows;
+  const areas = areaRows.map(({ is_total: _isAreaTotal, ...area }) => area);
   return { region, totals, areas, sources: results[1].rows };
 }
 
