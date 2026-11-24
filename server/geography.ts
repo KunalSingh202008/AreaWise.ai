@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 import { pool } from '../src/db';
 import type {
   CatalogueCoverage, Coordinates, CoverageCounts, Facility, GeographySource,
@@ -79,11 +80,11 @@ export async function discoverPlaces(query: string, region: string) {
   return result.rows.map(mapPlace);
 }
 
-export async function findPlace(id: string): Promise<PlaceSummary | null> {
+export async function findPlace(id: string, db: Pick<PoolClient, 'query'> = pool): Promise<PlaceSummary | null> {
   // Keep the historical Sigra link using the corresponding GeoNames neighbourhood record.
   const canonical = id.toLowerCase() === 'sigra' ? 'geo-10546713' : id.toLowerCase();
   if (!/^(geo-\d{1,12}|pin-[a-f0-9]{24})$/.test(canonical)) return null;
-  const { rows: [row] } = await pool.query<PlaceRow>(`
+  const { rows: [row] } = await db.query<PlaceRow>(`
     SELECT ${catalogueColumns}
     FROM geo_places p JOIN dataset_imports i ON i.id = p.import_id AND i.active
     WHERE p.place_id = $1 AND p.facility_category IS NULL
@@ -228,21 +229,25 @@ export async function getGeographyImports() {
 }
 
 // Register a source-backed catalogue point when an account first needs a foreign key.
+export async function ensureCatalogueLocality(client: PoolClient, place: PlaceSummary) {
+  const cityId = 'catalogue-' + place.id;
+  await client.query(`
+    INSERT INTO cities (id, name, state, center_lat, center_lng, center_geom)
+    VALUES ($1, $2, $3, $4::float8, $5::float8, ST_SetSRID(ST_MakePoint($5::float8, $4::float8), 4326))
+    ON CONFLICT (id) DO NOTHING
+  `, [cityId, place.name, place.region ?? '', place.center.lat, place.center.lng]);
+  await client.query(`
+    INSERT INTO localities (id, city_id, name, pincode, tagline, description, center_lat, center_lng, center_geom)
+    VALUES ($1, $2, $3, $4, 'GeoNames catalogue', 'Catalogue point', $5::float8, $6::float8, ST_SetSRID(ST_MakePoint($6::float8, $5::float8), 4326))
+    ON CONFLICT (id) DO NOTHING
+  `, [place.id, cityId, place.name, place.pincode ?? '', place.center.lat, place.center.lng]);
+}
+
 export async function registerCatalogueLocality(place: PlaceSummary) {
   const client = await pool.connect();
   try {
-    const cityId = 'catalogue-' + place.id;
     await client.query('BEGIN');
-    await client.query(`
-      INSERT INTO cities (id, name, state, center_lat, center_lng, center_geom)
-      VALUES ($1, $2, $3, $4::float8, $5::float8, ST_SetSRID(ST_MakePoint($5::float8, $4::float8), 4326))
-      ON CONFLICT (id) DO NOTHING
-    `, [cityId, place.name, place.region ?? '', place.center.lat, place.center.lng]);
-    await client.query(`
-      INSERT INTO localities (id, city_id, name, pincode, tagline, description, center_lat, center_lng, center_geom)
-      VALUES ($1, $2, $3, $4, 'GeoNames catalogue', 'Catalogue point', $5::float8, $6::float8, ST_SetSRID(ST_MakePoint($6::float8, $5::float8), 4326))
-      ON CONFLICT (id) DO NOTHING
-    `, [place.id, cityId, place.name, place.pincode ?? '', place.center.lat, place.center.lng]);
+    await ensureCatalogueLocality(client, place);
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');

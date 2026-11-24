@@ -23,6 +23,7 @@ import {
 } from './src/db/repositories/auditLogRepository.ts';
 import { getActiveScoringWeightsFromDb } from './src/db/repositories/scoringMethodologyRepository.ts';
 import { copilotRoutes } from './server/copilot';
+import { observationReviewRoutes } from './server/observation-review';
 import { Locality } from './src/types';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -72,6 +73,7 @@ app.use('/api/v1/workspaces', workspaceRoutes);
 app.use('/api/v1/me', accountRoutes);
 app.use('/api/v1/ai', copilotRoutes);
 app.use('/api/v1/community', communityRoutes);
+app.use('/api/v1/admin/observations', observationReviewRoutes);
 app.get('/api/v1/admin/community/reports', listModerationReports);
 app.get('/api/v1/admin/billing', sandboxBillingSummary);
 

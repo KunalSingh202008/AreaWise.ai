@@ -5,7 +5,7 @@ import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { parseTestCluster } from './test-db-config';
 import { withTestServer } from './http-test-server';
-import type { CatalogueCoverage } from '../src/types';
+import type { CatalogueCoverage, PublishedObservation } from '../src/types';
 
 const cluster = parseTestCluster();
 const template = process.env.AREAWISE_CATALOGUE_TEST_TEMPLATE || 'areawise_preview';
@@ -214,6 +214,7 @@ async function accountProduct(base: string, db: Pool, author: Account, reader: A
   console.log('PASS professional project export, one-use invitation and workspace isolation');
 
   await billingProduct(base, db, author, reader);
+  await observationProduct(base, db, admin, reader);
 }
 
 async function billingProduct(base: string, db: Pool, author: Account, reader: Account) {
@@ -282,6 +283,91 @@ async function billingProduct(base: string, db: Pool, author: Account, reader: A
   await event('cancel-' + nonce, 'subscription.cancelled', { subscription: { entity } });
   assert.equal((await request(base, '/billing/history', authOnly)).tier, null);
   console.log('PASS early signed payment reconciliation, event replay, owner-only export, refund and subscription entitlement');
+}
+
+async function observationProduct(base: string, db: Pool, admin: Account, reader: Account) {
+  const review = '/admin/observations';
+  const profile = `/locations/${mumbai}`;
+  // NASA Langley Research Center POWER Daily API v2.10.5, accessed 2026-11-24.
+  // MERRA-2 T2M daily value in UTC at the Mumbai catalogue point.
+  const measurement = {
+    placeId: mumbai, category: 'environment', metric: 'Daily air temperature at 2 metres',
+    value: '24.37', unit: '°C', observationDate: '2025-01-15', publisher: 'NASA Langley Research Center POWER',
+    referenceUrl: 'https://power.larc.nasa.gov/api/temporal/daily/point?parameters=T2M&community=SB&longitude=72.88261&latitude=19.07283&start=20250115&end=20250115&format=JSON&time-standard=UTC',
+    licenseUrl: 'https://www.earthdata.nasa.gov/engage/open-data-services-software-policies/data-use-guidance',
+    geographicLevel: 'MERRA-2 model grid cell covering the Mumbai catalogue point',
+    limitations: 'NASA POWER Daily API v2.10.5, accessed 2026-11-24. A daily UTC estimate on a model grid with limited representation of neighbourhood conditions.',
+    commercialReuseConfirmed: true, geographicMatchConfirmed: true,
+  };
+  const before = await request(base, profile);
+  assert.deepEqual(before.center, { lat: 19.07283, lng: 72.88261 });
+  const coverageBefore: CatalogueCoverage = await request(base, '/locations/coverage?region=Maharashtra');
+  await request(base, review, { status: 401 });
+  await request(base, review, { account: reader, status: 403 });
+  await request(base, review, write(reader, measurement, 'POST', 403));
+  for (const invalid of [
+    { observationDate: '2025-02-29' }, { observationDate: '2099-12-31' },
+    { commercialReuseConfirmed: false }, { geographicMatchConfirmed: false },
+    { referenceUrl: 'https://user:secret@example.test' }, { licenseUrl: 'http://127.0.0.1' },
+    { category: 'toString' }, { geographicLevel: '' },
+  ]) {
+    await request(base, review, write(admin, { ...measurement, ...invalid }, 'POST', 400));
+  }
+  await request(base, review, write(admin, { ...measurement, placeId: 'geo-0' }, 'POST', 404));
+
+  const submit = () => fetch(base + '/api/v1' + review, {
+    method: 'POST', headers: { Authorization: 'Bearer ' + admin.token, 'Content-Type': 'application/json' },
+    body: JSON.stringify(measurement),
+  });
+  const responses = await Promise.all([submit(), submit()]);
+  const [published, duplicate] = await Promise.all(responses.map((response) => response.json()));
+  assert.deepEqual(responses.map((response) => response.status).sort(), [200, 201], JSON.stringify([published, duplicate]));
+  assert.equal(duplicate.id, published.id);
+  assert.equal(published.status, 'published');
+  assert.equal(published.placeId, mumbai);
+  assert.equal(published.referenceUrl, measurement.referenceUrl);
+  const correction = { ...measurement, limitations: measurement.limitations + ' Spatial resolution is approximately 0.5° by 0.625°.' };
+  await request(base, review, write(admin, correction, 'POST', 409));
+  const list = await request(base, `${review}?placeId=${mumbai}`, { account: admin });
+  assert.ok(list.observations.some((entry: { id: string; status: string }) => entry.id === published.id && entry.status === 'published'));
+
+  const updated = await request(base, profile);
+  assert.ok(updated.observations.some((entry: PublishedObservation) =>
+    entry.id === published.id && entry.value === '24.37' && entry.geographicLevel === measurement.geographicLevel));
+  assert.equal(updated.scores.overallScore, null);
+  const report = await request(base, `${profile}/report.html`);
+  assert.match(report, /24\.37 °C/);
+  assert.match(report, /NASA Langley Research Center POWER/);
+  const ask = () => request(base, '/ai/ask', {
+    method: 'POST', body: { localityId: mumbai, prompt: 'What evidence is available for this place?' },
+  });
+  const cited = (answer: { citations: { kind: string; url: string }[] }) => answer.citations.some((item) =>
+    item.kind === 'reviewed_observation' && item.url === measurement.referenceUrl);
+  assert.ok(cited(await ask()));
+  const coverageAfter: CatalogueCoverage = await request(base, '/locations/coverage?region=Maharashtra');
+  assert.equal(coverageAfter.totals.observations, coverageBefore.totals.observations + 1);
+  const withdrawals = `${review}/${published.id}/withdraw`;
+  const reason = 'Clarify the source grid resolution in the published limitations.';
+  await request(base, withdrawals, write(reader, { reason }, 'POST', 403));
+  await request(base, withdrawals, write(admin, { reason: ' ' }, 'POST', 400));
+  const attempts = await Promise.all([1, 2].map(() => request(base, withdrawals, write(admin, { reason }))));
+  assert.ok(attempts.every((entry) => entry.status === 'withdrawn'));
+  assert.ok(!(await request(base, profile)).observations.some((entry: PublishedObservation) => entry.id === published.id));
+  assert.ok(!(await request(base, `${profile}/report.html`)).includes(measurement.metric));
+  assert.ok(!cited(await ask()));
+  const coverageWithdrawn: CatalogueCoverage = await request(base, '/locations/coverage?region=Maharashtra');
+  assert.equal(coverageWithdrawn.totals.observations, coverageBefore.totals.observations);
+  await request(base, review, write(admin, measurement, 'POST', 409));
+  const replacement = await request(base, review, write(admin, correction, 'POST', 201));
+  assert.notEqual(replacement.id, published.id);
+  assert.equal(replacement.value, published.value);
+  const { rows } = await db.query(`
+    SELECT action, actor, details FROM audit_logs WHERE entity_id = $1 ORDER BY id
+  `, [published.id]);
+  assert.deepEqual(rows.map((row) => row.action), ['observation_published', 'observation_withdrawn']);
+  assert.ok(rows.every((row) => row.actor === admin.uid && row.details.placeId === mumbai));
+  assert.equal(rows[1].details.reason, reason);
+  console.log('PASS administrator evidence review, concurrent publish and withdrawal, attribution, coverage, reports, Copilot citations and audit');
 }
 
 let created = false;

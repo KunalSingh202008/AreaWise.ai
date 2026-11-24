@@ -6,9 +6,10 @@ import { getJson } from '../../api';
 interface Props {
   onSelect: (place: PlaceSummary) => void;
   label?: string;
+  showRecordDetails?: boolean;
 }
 
-export function PlaceSearch({ onSelect, label = 'Place name or six-digit PIN' }: Props) {
+export function PlaceSearch({ onSelect, label = 'Place name or six-digit PIN', showRecordDetails = false }: Props) {
   const inputId = useId();
   const [query, setQuery] = useState('');
   const [matches, setMatches] = useState<PlaceSummary[]>([]);
@@ -107,6 +108,9 @@ export function PlaceSearch({ onSelect, label = 'Place name or six-digit PIN' }:
                     {[place.district, place.region, place.pincode && `PIN ${place.pincode}`].filter(Boolean).join(' · ')}
                     {place.kind === 'administrative' ? ' · Administrative area' : ''}
                   </span>
+                  {showRecordDetails && <span className="block text-xs text-slate-500">
+                    {place.source.publisher} · {place.id} · {place.center.lat}, {place.center.lng}
+                  </span>}
                 </span>
               </button>
             </li>

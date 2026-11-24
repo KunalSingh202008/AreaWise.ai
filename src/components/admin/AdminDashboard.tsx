@@ -3,6 +3,7 @@ import { ShieldCheck } from 'lucide-react';
 import { authenticatedFetch } from '../../context/AuthContext';
 import { readJson } from '../../api';
 import type { CommunityReport } from '../../types';
+import { ObservationReview } from './ObservationReview';
 
 interface SourceRun {
   id: string;
@@ -24,6 +25,10 @@ interface AuditEntry {
   details: string;
 }
 
+async function load<T>(path: string, signal: AbortSignal) {
+  return readJson<T>(await authenticatedFetch('/api/v1/admin/' + path, { signal }));
+}
+
 export function AdminDashboard() {
   const [sources, setSources] = useState<SourceRun[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
@@ -33,17 +38,16 @@ export function AdminDashboard() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
+  const [auditRevision, setAuditRevision] = useState(0);
+  const [auditLoading, setAuditLoading] = useState(true);
+  const [auditError, setAuditError] = useState('');
 
   useEffect(() => {
     const abort = new AbortController();
-    async function load<T>(path: string) {
-      return readJson<T>(await authenticatedFetch('/api/v1/admin/' + path, { signal: abort.signal }));
-    }
     Promise.allSettled([
-      load<SourceRun[]>('data-sources').then((value) => { if (!abort.signal.aborted) setSources(value); }),
-      load<Record<string, number>>('scoring-weights').then((value) => { if (!abort.signal.aborted) setWeights(value); }),
-      load<AuditEntry[]>('audit-logs').then((value) => { if (!abort.signal.aborted) setAudit(value); }),
-      load<{ reports: CommunityReport[] }>('community/reports').then((value) => { if (!abort.signal.aborted) setReports(value.reports); }),
+      load<SourceRun[]>('data-sources', abort.signal).then((value) => { if (!abort.signal.aborted) setSources(value); }),
+      load<Record<string, number>>('scoring-weights', abort.signal).then((value) => { if (!abort.signal.aborted) setWeights(value); }),
+      load<{ reports: CommunityReport[] }>('community/reports', abort.signal).then((value) => { if (!abort.signal.aborted) setReports(value.reports); }),
     ]).then((results) => {
       if (abort.signal.aborted) return;
       const failed = results.find((entry) => entry.status === 'rejected');
@@ -52,6 +56,23 @@ export function AdminDashboard() {
     });
     return () => abort.abort();
   }, []);
+
+  useEffect(() => {
+    const abort = new AbortController();
+    load<AuditEntry[]>('audit-logs', abort.signal)
+      .then((value) => { if (!abort.signal.aborted) setAudit(value); })
+      .catch((error: unknown) => {
+        if (!abort.signal.aborted) setAuditError(error instanceof Error ? error.message : 'Could not load audit activity.');
+      })
+      .finally(() => { if (!abort.signal.aborted) setAuditLoading(false); });
+    return () => abort.abort();
+  }, [auditRevision]);
+
+  function refreshAudit() {
+    setAuditLoading(true);
+    setAuditError('');
+    setAuditRevision((current) => current + 1);
+  }
 
   async function moderate(id: string, status: CommunityReport['status']) {
     setError('');
@@ -63,6 +84,7 @@ export function AdminDashboard() {
         body: JSON.stringify({ status, officialResponse: notes[id] }),
       }).then((response) => readJson<CommunityReport>(response));
       setReports((previous) => previous.map((item) => item.id === id ? report : item));
+      refreshAudit();
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Could not update report.');
     } finally {
@@ -90,6 +112,8 @@ export function AdminDashboard() {
           ))}
         </ul>
       </section>
+
+      <ObservationReview onChange={refreshAudit} />
 
       <section className={panel}>
         <h2 className="font-bold">Community moderation</h2>
@@ -133,7 +157,11 @@ export function AdminDashboard() {
 
       <section className={panel}>
         <h2 className="font-bold">Audit activity</h2>
-        {!loading && !audit.length && <p className="text-sm text-slate-500">No audit entries recorded.</p>}
+        {auditLoading && <p role="status" className="text-sm text-slate-500">Loading audit activity…</p>}
+        {auditError && <p role="alert" className="text-sm text-rose-600">{auditError}{' '}
+          <button className="underline" type="button" onClick={refreshAudit}>Retry</button>
+        </p>}
+        {!auditLoading && !auditError && !audit.length && <p className="text-sm text-slate-500">No audit entries recorded.</p>}
         <ul className="divide-y divide-slate-100 dark:divide-slate-800">
           {audit.map((entry) => (
             <li key={entry.id} className="flex flex-wrap justify-between gap-2 py-2 text-xs">

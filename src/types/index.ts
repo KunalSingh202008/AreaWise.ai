@@ -161,6 +161,25 @@ export interface PublishedObservation {
   limitations: string;
 }
 
+export const observationCategories = {
+  connectivity: 'Connectivity',
+  healthcare: 'Healthcare',
+  education: 'Education',
+  environment: 'Environment',
+  civicInfrastructure: 'Civic infrastructure',
+  dailyAmenities: 'Daily amenities',
+  propertyMarketTransparency: 'Property market transparency',
+  demographics: 'Demographics',
+  other: 'Other',
+} as const;
+
+export interface ReviewedObservation extends PublishedObservation {
+  placeId: string;
+  placeName: string;
+  publishedAt: string;
+  status: 'published' | 'withdrawn';
+}
+
 export interface Locality {
   id: string;
   name: string;

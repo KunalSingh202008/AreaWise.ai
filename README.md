@@ -21,6 +21,12 @@ Use the [GeoNames India gazetteer](https://download.geonames.org/export/dump/IN.
 
 For the production runtime locally, run `npm run build` followed by `npm start`. `/api/v1/health` checks the running process. `/api/v1/ready` also requires PostGIS, the application schema, and both active geography snapshots. A multi-stage `Dockerfile` builds and serves the same app on port 8080 by default. Apply approved database migrations as a separate operation before deploying.
 
+## Review and publish locality evidence
+
+Sign in to `/admin` with the Firebase administrator claim. Under **Review locality evidence**, select the catalogue record by its name, ID, and coordinates. Enter the measurement as the source reports it, along with its date, publisher, public evidence and licensing links, geographic scope, and limitations. Confirm the geographic match and commercial reuse terms before publishing. The observation then appears on the place profile, in printable reports, and in Copilot’s available evidence. Coverage counts update when an observation is published or withdrawn.
+
+To correct a publication, withdraw it with a reason and submit the revised observation. AreaWise retains the publication and withdrawal history in the admin audit log. To use an observation in AreaScore, it must separately qualify under the published scoring methodology.
+
 ## Verify
 
 ```sh
