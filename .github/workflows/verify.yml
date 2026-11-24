@@ -1,0 +1,64 @@
+name: Verify AreaWise
+
+'on':
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgis:
+        image: postgis/postgis:19-3.7
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: areawise-ci-only
+          POSTGRES_DB: postgres
+        ports:
+          - '127.0.0.1:55432:5432'
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: '26.13.1'
+          package-manager-cache: false
+      - name: Install locked dependencies
+        run: |
+          npm install --global bun@1.4.5
+          bun install --frozen-lockfile
+      - name: Type-check and run unit tests
+        run: |
+          npm run lint
+          npm test
+      - name: Build and check application routing
+        run: |
+          npm run build
+          npm run test:http
+      - name: Run isolated PostGIS tests
+        env:
+          PG_TEST_URL: postgresql://postgres:areawise-ci-only@127.0.0.1:55432/postgres
+        run: npm run test:db
+      - name: Build and smoke-test the application container
+        run: |
+          docker build --tag areawise-verification .
+          container_id="$(docker run --detach --publish 127.0.0.1:48080:8080 areawise-verification)"
+          trap 'docker logs "$container_id"; docker stop "$container_id"; docker rm "$container_id"' EXIT
+          curl --fail --silent --show-error --retry 20 --retry-delay 1 --retry-all-errors --max-time 3 \
+            http://127.0.0.1:48080/api/v1/health
+          curl --fail --silent --show-error -H 'Accept: text/html' \
+            http://127.0.0.1:48080/coverage | grep -Fq 'id="root"'

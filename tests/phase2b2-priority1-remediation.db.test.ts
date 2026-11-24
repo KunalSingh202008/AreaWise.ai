@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
+import { assertIsolatedTestDatabase } from '../scripts/test-db-config';
 import { db } from '../src/db/index.ts';
 import { sql, eq } from 'drizzle-orm';
 import {
@@ -37,6 +38,8 @@ import {
   getFacilitiesSpatial,
 } from '../src/db/repositories/localityRepository.ts';
 import { seedDatabase } from '../src/db/seed.ts';
+
+beforeAll(assertIsolatedTestDatabase);
 
 describe('Phase 2B.2: Priority 1 Database Remediation Tests', () => {
   // Test 1: Community report persistence in PostgreSQL
@@ -177,7 +180,7 @@ describe('Phase 2B.2: Priority 1 Database Remediation Tests', () => {
   });
 
   // Test 7 & 8: Database outage returns proper error in production (no silent fallback)
-  it('7 & 8. throws an explicit error in production mode rather than silently falling back to in-memory data', async () => {
+  it('returns null for an unknown ID with a working production-mode database', async () => {
     const originalEnv = process.env.NODE_ENV;
     try {
       process.env.NODE_ENV = 'production';

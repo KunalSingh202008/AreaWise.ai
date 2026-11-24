@@ -1,20 +1,21 @@
 import { db } from '../index.ts';
 import {
   localities,
+  cities,
   localityBoundaries,
   facilities,
   indicators,
   scoreSnapshots,
   communityReports,
 } from '../schema.ts';
-import { eq, sql, desc, or, ilike } from 'drizzle-orm';
+import { and, asc, eq, sql, desc, or, ilike } from 'drizzle-orm';
 import { Locality, Facility, LocalityCategoryScores, LocalityScore, ProfileScores } from '../../types/index.ts';
 import { VARANASI_LOCALITIES, resolveLocationByCoordinates as fallbackResolver } from '../../../server/data.ts';
 import { calculateAreaScore, calculateProfileScores, BENCHMARK_INDICATORS_COUNT } from '../../../server/scoring.ts';
 
 // Helper to convert DB locality record + snapshot + indicators to standard Locality contract
 function mapDbRowToLocality(
-  row: typeof localities.$inferSelect,
+  row: typeof localities.$inferSelect & { city: string; state: string },
   boundaryCoords?: [number, number][],
   facList: Facility[] = [],
   indList: typeof indicators.$inferSelect[] = [],
@@ -85,8 +86,8 @@ function mapDbRowToLocality(
     id: row.id,
     name: row.name,
     hindiName: row.hindiName || undefined,
-    city: 'Varanasi',
-    state: 'Uttar Pradesh',
+    city: row.city,
+    state: row.state,
     pincode: row.pincode,
     center,
     bounds,
@@ -94,7 +95,7 @@ function mapDbRowToLocality(
     hindiTagline: row.hindiTagline || undefined,
     description: row.description,
     hindiDescription: row.hindiDescription || undefined,
-    previewImage: row.previewImage || '/src/assets/images/sigra_locality_preview_1794054120651.jpg',
+    previewImage: row.previewImage?.replace(/^\/src\/assets\/images\//, '/assets/images/') || '/assets/images/sigra_locality_preview_1794054120651.jpg',
     scores,
     profileScores,
     strengths: (row.strengths || []) as string[],
@@ -169,16 +170,19 @@ export async function getFacilitiesSpatial(
 /**
  * Retrieve all localities from PostgreSQL with PostGIS-enhanced data
  */
+function selectActiveLocalities() {
+  return db.select({ locality: localities, city: cities.name, state: cities.state })
+    .from(localities)
+    .innerJoin(cities, eq(localities.cityId, cities.id));
+}
+
 export async function getAllLocalitiesFromDb(): Promise<Locality[]> {
   try {
-    const dbLocs = await db.select().from(localities);
-    if (!dbLocs || dbLocs.length === 0) {
-      return VARANASI_LOCALITIES;
-    }
+    const dbLocs = await selectActiveLocalities().where(eq(cities.isActive, true));
 
     const locList: Locality[] = [];
 
-    for (const loc of dbLocs) {
+    for (const { locality: loc, city, state } of dbLocs) {
       // Fetch boundary coordinates
       const boundary = await db.select()
         .from(localityBoundaries)
@@ -206,7 +210,7 @@ export async function getAllLocalitiesFromDb(): Promise<Locality[]> {
 
       locList.push(
         mapDbRowToLocality(
-          loc,
+          { ...loc, city, state },
           boundary[0]?.coordinates as [number, number][],
           facList,
           indList,
@@ -231,12 +235,12 @@ export async function getAllLocalitiesFromDb(): Promise<Locality[]> {
  */
 export async function getLocalityByIdFromDb(id: string): Promise<Locality | null> {
   try {
-    const locRows = await db.select().from(localities).where(eq(localities.id, id.toLowerCase())).limit(1);
-    if (!locRows || locRows.length === 0) {
-      return VARANASI_LOCALITIES.find((l) => l.id.toLowerCase() === id.toLowerCase()) || null;
-    }
+    const [row] = await selectActiveLocalities()
+      .where(and(eq(cities.isActive, true), eq(localities.id, id.toLowerCase())))
+      .limit(1);
+    if (!row) return null;
 
-    const loc = locRows[0];
+    const { locality: loc, city, state } = row;
     const boundary = await db.select()
       .from(localityBoundaries)
       .where(eq(localityBoundaries.localityId, loc.id))
@@ -259,7 +263,7 @@ export async function getLocalityByIdFromDb(id: string): Promise<Locality | null
     );
 
     return mapDbRowToLocality(
-      loc,
+      { ...loc, city, state },
       boundary[0]?.coordinates as [number, number][],
       facList,
       indList,
@@ -280,26 +284,25 @@ export async function getLocalityByIdFromDb(id: string): Promise<Locality | null
  */
 export async function searchLocalitiesInDb(query: string, city?: string): Promise<Locality[]> {
   try {
-    const q = `%${query.trim()}%`;
-    const rows = await db.select()
+    const literal = (text: string) => '%' + text.replace(/[\\%_]/g, '\\$&') + '%';
+    const q = literal(query.trim());
+    const rows = await db.select({ id: localities.id })
       .from(localities)
-      .where(
+      .innerJoin(cities, eq(localities.cityId, cities.id))
+      .where(and(
+        eq(cities.isActive, true),
+        city ? or(ilike(cities.name, literal(city)), ilike(cities.hindiName, literal(city))) : undefined,
         or(
           ilike(localities.name, q),
+          ilike(localities.hindiName, q),
           ilike(localities.pincode, q),
-          ilike(localities.tagline, q),
-          ilike(localities.description, q)
+          ilike(cities.name, q),
+          ilike(cities.hindiName, q),
+          ilike(cities.state, q)
         )
-      );
-
-    if (rows.length === 0) {
-      const all = await getAllLocalitiesFromDb();
-      return all.filter((l) =>
-        l.name.toLowerCase().includes(query.toLowerCase()) ||
-        l.pincode.includes(query) ||
-        (l.hindiName && l.hindiName.includes(query))
-      );
-    }
+      ))
+      .orderBy(asc(localities.name), asc(localities.id))
+      .limit(25);
 
     const results: Locality[] = [];
     for (const row of rows) {
@@ -313,9 +316,11 @@ export async function searchLocalitiesInDb(query: string, city?: string): Promis
       throw new Error('Database service unavailable for search query.');
     }
     console.warn('searchLocalitiesInDb error:', error instanceof Error ? error.message : error);
-    return VARANASI_LOCALITIES.filter((l) =>
-      l.name.toLowerCase().includes(query.toLowerCase()) ||
-      l.pincode.includes(query)
+    const term = query.toLowerCase();
+    return VARANASI_LOCALITIES.filter((locality) =>
+      (!city || locality.city.toLowerCase().includes(city.toLowerCase())) &&
+      [locality.name, locality.hindiName, locality.city, locality.state, locality.pincode]
+        .some((value) => value?.toLowerCase().includes(term))
     );
   }
 }
@@ -419,7 +424,7 @@ export async function resolveLocationSpatial(
       ],
       tagline: `Dynamically resolved point via PostGIS spatial engine`,
       description: `Analysis for ${resolvedName} computed using PostGIS geospatial proximity and empirical spatial containment.`,
-      previewImage: '/src/assets/images/hero_varanasi_urban_1794054119447.jpg',
+      previewImage: '/assets/images/hero_varanasi_urban_1794054119447.jpg',
       scores: calculatedScores,
       profileScores,
       strengths: [

@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
+import { assertIsolatedTestDatabase } from '../scripts/test-db-config';
 import { db } from '../src/db/index.ts';
 import { sql } from 'drizzle-orm';
 import {
@@ -10,8 +11,10 @@ import {
 } from '../src/db/repositories/localityRepository.ts';
 import { METHODOLOGY_VERSION } from '../server/scoring.ts';
 
+beforeAll(assertIsolatedTestDatabase);
+
 describe('Phase 2B: PostgreSQL + PostGIS Database Integration Tests', () => {
-  it('connects to Cloud SQL PostgreSQL and verifies PostGIS 3.6 extension', async () => {
+  it('connects to isolated PostgreSQL and verifies PostGIS 3.x', async () => {
     const result = await db.execute<{ version: string }>(sql`SELECT PostGIS_Version() as version;`);
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0].version).toContain('3.');

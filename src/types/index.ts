@@ -3,8 +3,6 @@
  * Independent Locality Intelligence & Decision Support Platform
  */
 
-export type CityId = 'varanasi';
-
 export type SupportedLanguage = 'en' | 'hi' | 'hinglish';
 
 export interface Coordinates {
@@ -33,7 +31,9 @@ export interface Facility {
   address: string;
   source: string;
   verificationStatus: 'verified' | 'official_registry' | 'community_reported' | 'unverified';
-  lastVerifiedDate: string;
+  lastVerifiedDate: string | null;
+  sourceUrl?: string;
+  sourceRecordModifiedOn?: string | null;
   metadata?: Record<string, any>;
 }
 
@@ -109,20 +109,91 @@ export interface MarketTransparencyRecord {
   guidanceNote: string;
 }
 
+export interface GeographySource {
+  publisher: string;
+  sourceUrl: string;
+  recordUrl: string;
+  licenseUrl: string;
+  importedAt: string;
+  recordModifiedOn: string | null;
+  snapshotSha256: string;
+}
+
+export interface PlaceSummary {
+  id: string;
+  name: string;
+  region: string | null;
+  district: string | null;
+  pincode: string | null;
+  center: Coordinates;
+  kind: 'place' | 'administrative' | 'postal';
+  source: GeographySource;
+}
+
+export interface CoverageCounts {
+  places: number;
+  postalEntries: number;
+  pincodes: number;
+  facilities: number;
+  reviewedPlaces: number;
+  observations: number;
+  lastObservationDate: string | null;
+}
+
+export interface CatalogueCoverage {
+  region: string | null;
+  totals: CoverageCounts;
+  areas: (CoverageCounts & { name: string | null })[];
+  sources: { name: string; sourceUrl: string; licenseUrl: string; importedAt: string }[];
+}
+
+export interface PublishedObservation {
+  id: string;
+  metric: string;
+  value: string;
+  unit: string | null;
+  category: string;
+  observationDate: string;
+  publisher: string;
+  referenceUrl: string;
+  licenseUrl: string;
+  geographicLevel: string;
+  limitations: string;
+}
+
+export const observationCategories = {
+  connectivity: 'Connectivity',
+  healthcare: 'Healthcare',
+  education: 'Education',
+  environment: 'Environment',
+  civicInfrastructure: 'Civic infrastructure',
+  dailyAmenities: 'Daily amenities',
+  propertyMarketTransparency: 'Property market transparency',
+  demographics: 'Demographics',
+  other: 'Other',
+} as const;
+
+export interface ReviewedObservation extends PublishedObservation {
+  placeId: string;
+  placeName: string;
+  publishedAt: string;
+  status: 'published' | 'withdrawn';
+}
+
 export interface Locality {
   id: string;
   name: string;
   hindiName?: string;
   city: string;
   state: string;
-  pincode: string;
+  pincode: string | null;
   center: Coordinates;
   bounds: [number, number][]; // Polygon bounding box
   tagline: string;
   hindiTagline?: string;
   description: string;
   hindiDescription?: string;
-  previewImage: string;
+  previewImage: string | null;
   scores: LocalityScore;
   profileScores: ProfileScores;
   strengths: string[];
@@ -132,6 +203,8 @@ export interface Locality {
   missingDataNotes: string[];
   propertyMarketData?: MarketTransparencyRecord;
   isCustomResolved?: boolean;
+  geography?: PlaceSummary;
+  observations?: PublishedObservation[];
 }
 
 export interface CommunityReport {
@@ -193,4 +266,25 @@ export interface AIMessage {
   dataFreshness?: string;
   limitations?: string[];
   suggestedNextSteps?: string[];
+}
+
+export interface EvidenceCitation {
+  id: string;
+  kind: 'catalogue' | 'facility' | 'reviewed_observation';
+  source: string;
+  url: string;
+  licenseUrl: string;
+  locality: string;
+  observationDate: string | null;
+  recordModifiedOn: string | null;
+  text: string;
+}
+
+export interface CopilotResponse {
+  mode: 'gemini' | 'evidence_only';
+  providerStatus: 'answered' | 'not_configured' | 'sign_in_required' | 'unavailable';
+  answer: string;
+  citations: EvidenceCitation[];
+  limitations: string[];
+  conversationId?: string;
 }

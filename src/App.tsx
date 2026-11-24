@@ -2,210 +2,252 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-
-import React, { useState, useEffect } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { LanguageProvider } from './context/LanguageContext';
-import { Navbar } from './components/layout/Navbar';
+import { Navbar, type Tab } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
 import { LandingView } from './components/landing/LandingView';
-import { LocalityDashboard } from './components/dashboard/LocalityDashboard';
-import { MapExplorerView } from './components/map/MapExplorerView';
-import { LocalityComparison } from './components/comparison/LocalityComparison';
-import { CommunityReportsView } from './components/community/CommunityReportsView';
-import { AIAssistantView } from './components/ai/AIAssistantView';
-import { AdminDashboard } from './components/admin/AdminDashboard';
-import { SavedAreasView } from './components/saved/SavedAreasView';
-import { PrintableReportModal } from './components/reports/PrintableReportModal';
-import { Locality } from './types';
-import { VARANASI_LOCALITIES } from '../server/data';
+import { PlaceSearch } from './components/geography/PlaceSearch';
+import { getJson, readJson } from './api';
+import type { Locality, PlaceSummary } from './types';
+
+const LocalityDashboard = lazy(() => import('./components/dashboard/LocalityDashboard').then((m) => ({ default: m.LocalityDashboard })));
+const MapExplorerView = lazy(() => import('./components/map/MapExplorerView').then((m) => ({ default: m.MapExplorerView })));
+const LocalityComparison = lazy(() => import('./components/comparison/LocalityComparison').then((m) => ({ default: m.LocalityComparison })));
+const CommunityReportsView = lazy(() => import('./components/community/CommunityReportsView').then((m) => ({ default: m.CommunityReportsView })));
+const AIAssistantView = lazy(() => import('./components/ai/AIAssistantView').then((m) => ({ default: m.AIAssistantView })));
+const AdminDashboard = lazy(() => import('./components/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
+const SavedAreasView = lazy(() => import('./components/saved/SavedAreasView').then((m) => ({ default: m.SavedAreasView })));
+const BillingView = lazy(() => import('./components/billing/BillingView').then((m) => ({ default: m.BillingView })));
+const ProfessionalView = lazy(() => import('./components/professional/ProfessionalView').then((m) => ({ default: m.ProfessionalView })));
+const CoverageView = lazy(() => import('./components/geography/CoverageView').then((m) => ({ default: m.CoverageView })));
+const PrintableReportModal = lazy(() => import('./components/reports/PrintableReportModal').then((m) => ({ default: m.PrintableReportModal })));
+
+const paths: Record<Tab, string> = {
+  landing: '/', dashboard: '/localities', explorer: '/map', compare: '/compare',
+  community: '/community', assistant: '/copilot', admin: '/admin', saved: '/saved',
+  professional: '/professional', billing: '/plans', coverage: '/coverage',
+};
+const tabs = Object.keys(paths) as Tab[];
+
+function getRoute(): { tab: Tab; id: string | null } {
+  const [, segment, id] = window.location.pathname.split('/');
+  const tab = tabs.find((entry) => paths[entry] === `/${segment}`) ?? 'landing';
+  const perPlace = tab === 'dashboard' || tab === 'explorer' || tab === 'assistant' || tab === 'community';
+  return { tab, id: perPlace && id && /^[a-z0-9-]+$/i.test(id) ? id : null };
+}
+
+function PanelStatus({ message }: { message: string }) {
+  return <p role="status" className="mx-auto max-w-7xl px-5 py-10 text-sm text-slate-600 dark:text-slate-400">{message}</p>;
+}
 
 function AppContent() {
-  const [localities, setLocalities] = useState<Locality[]>(VARANASI_LOCALITIES);
-  const [selectedLocalityId, setSelectedLocalityId] = useState<string>('sigra');
-  const [activeTab, setActiveTab] = useState<
-    'landing' | 'dashboard' | 'explorer' | 'compare' | 'community' | 'assistant' | 'admin' | 'saved'
-  >('landing');
-  const [comparisonIds, setComparisonIds] = useState<string[]>(['sigra', 'lanka', 'mahmoorganj']);
-  const [assistantPrompt, setAssistantPrompt] = useState<string>('');
-  const [reportModalLocality, setReportModalLocality] = useState<Locality | null>(null);
+  const { user } = useAuth();
+  const [route, setRoute] = useState(getRoute);
+  const [places, setPlaces] = useState<PlaceSummary[]>([]);
+  const [catalogueState, setCatalogueState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [localities, setLocalities] = useState<Record<string, Locality>>({});
+  const [detailError, setDetailError] = useState('');
+  const [selectedPoint, setSelectedPoint] = useState<Locality | null>(null);
+  const [comparisonIds, setComparisonIds] = useState<string[]>([]);
+  const [assistantPrompt, setAssistantPrompt] = useState('');
+  const [assistantIds, setAssistantIds] = useState<string[]>([]);
+  const [report, setReport] = useState<Locality | null>(null);
+  const activeTab = route.tab;
 
-  // Fetch localities from backend API
-  const refreshLocalities = async () => {
+  const refreshPlaces = useCallback(async (signal?: AbortSignal) => {
     try {
-      const res = await fetch('/api/v1/locations/search?city=varanasi');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.results && data.results.length > 0) {
-          const fullList: Locality[] = [];
-          for (const item of data.results) {
-            const locRes = await fetch(`/api/v1/locations/${item.id}`);
-            if (locRes.ok) {
-              const fullLoc = await locRes.json();
-              fullList.push(fullLoc);
-            }
-          }
-          if (fullList.length > 0) {
-            setLocalities(fullList);
-          }
-        }
+      const data = await getJson<{ results: PlaceSummary[] }>('/api/v1/locations/search', signal);
+      if (!signal?.aborted) {
+        setPlaces(data.results);
+        setCatalogueState('ready');
       }
-    } catch (err) {
-      console.warn('Backend API warming up, using local attributable pilot data:', err);
+    } catch {
+      if (!signal?.aborted) setCatalogueState('error');
     }
-  };
-
-  useEffect(() => {
-    refreshLocalities();
   }, []);
 
-  // Selected Locality object
-  const currentLocality =
-    localities.find((l) => l.id.toLowerCase() === selectedLocalityId.toLowerCase()) ||
-    localities[0] ||
-    VARANASI_LOCALITIES[0];
+  useEffect(() => {
+    const abort = new AbortController();
+    void refreshPlaces(abort.signal);
+    const onHistory = () => {
+      setSelectedPoint(null);
+      setRoute(getRoute());
+    };
+    window.addEventListener('popstate', onHistory);
+    return () => {
+      abort.abort();
+      window.removeEventListener('popstate', onHistory);
+    };
+  }, [refreshPlaces]);
 
-  const handleSelectLocality = (id: string) => {
-    setSelectedLocalityId(id);
-    setActiveTab('dashboard');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  const activeId = route.id ?? places[0]?.id;
+  const currentLocality = selectedPoint ?? (activeId ? localities[activeId] : undefined);
+  const detailsNeeded = ['dashboard', 'explorer', 'assistant', 'community'].includes(activeTab);
+  const isLocalityReady = Boolean(currentLocality);
 
-  const handleOpenCompare = (ids?: string[]) => {
-    if (ids && ids.length > 0) {
-      setComparisonIds(ids);
-    }
-    setActiveTab('compare');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleOpenAssistantWithPrompt = (prompt: string) => {
-    setAssistantPrompt(prompt);
-    setActiveTab('assistant');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  // Dynamic Geographic Point Resolver
-  const handleResolveCoordinates = async (lat: number, lng: number, label?: string) => {
-    try {
-      const res = await fetch('/api/v1/locations/resolve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lat, lng, label }),
+  useEffect(() => {
+    if (!activeId || isLocalityReady || !detailsNeeded) return;
+    const abort = new AbortController();
+    getJson<Locality>(`/api/v1/locations/${encodeURIComponent(activeId)}`, abort.signal)
+      .then((locality) => {
+        if (abort.signal.aborted) return;
+        setLocalities((previous) => ({ ...previous, [locality.id]: locality, [activeId]: locality }));
+      })
+      .catch((error: unknown) => {
+        if (!abort.signal.aborted) setDetailError(error instanceof Error ? error.message : 'Location unavailable.');
       });
+    return () => abort.abort();
+  }, [activeId, isLocalityReady, detailsNeeded]);
 
-      if (res.ok) {
-        const resolved = await res.json();
-        // Add to localities if not present
-        if (!localities.some((l) => l.id === resolved.id)) {
-          setLocalities([resolved, ...localities]);
-        }
-        setSelectedLocalityId(resolved.id);
-        setActiveTab('dashboard');
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-    } catch (err) {
-      console.error('Error resolving coordinates:', err);
-    }
-  };
+  function navigate(tab: Tab, id: string | null = null, keepPoint = false) {
+    const pathname = paths[tab] + (id ? `/${encodeURIComponent(id)}` : '');
+    if (pathname !== window.location.pathname) history.pushState(null, '', pathname);
+    if (!keepPoint) setSelectedPoint(null);
+    setDetailError('');
+    setRoute({ tab, id });
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+
+  function openLocality(id: string) {
+    navigate('dashboard', id);
+  }
+
+  function openComparison(ids: string[] = []) {
+    setComparisonIds(ids);
+    navigate('compare');
+  }
+
+  function openAssistant(prompt = '') {
+    setAssistantPrompt(prompt);
+    setAssistantIds([]);
+    navigate('assistant', currentLocality?.geography?.id ?? route.id);
+  }
+
+  async function resolveCoordinates(lat: number, lng: number) {
+    const locality = await fetch('/api/v1/locations/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat, lng }),
+    }).then((response) => readJson<Locality>(response));
+    setSelectedPoint(locality);
+    navigate('dashboard', null, true);
+  }
+
+  const knownLocalities = [...new Map(Object.values(localities).map((locality) => [locality.id, locality])).values()];
+  const chosenLocalities = currentLocality && !knownLocalities.includes(currentLocality)
+    ? [currentLocality, ...knownLocalities] : knownLocalities;
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
-      {/* Top Bar Navigation */}
+    <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <Navbar
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={(tab) => navigate(tab, ['dashboard', 'explorer', 'assistant', 'community'].includes(tab)
+          ? currentLocality?.geography?.id ?? route.id : null)}
         selectedLocality={currentLocality}
       />
+      <main className="flex-1" id="main">
+        <Suspense fallback={<PanelStatus message="Loading view…" />}>
+          {activeTab === 'landing' && (
+            <>
+              <LandingView
+                places={places}
+                onSelectLocality={openLocality}
+                onOpenCompare={() => openComparison()}
+                onOpenAssistant={() => openAssistant()}
+                onResolveCoordinates={resolveCoordinates}
+              />
+              {catalogueState === 'error' && <PanelStatus message="The geography catalogue is temporarily unavailable." />}
+            </>
+          )}
 
-      {/* Main Content Area */}
-      <main className="flex-1">
-        {activeTab === 'landing' && (
-          <LandingView
-            localities={localities}
-            onSelectLocality={handleSelectLocality}
-            onOpenCompare={() => handleOpenCompare(['sigra', 'lanka', 'mahmoorganj'])}
-            onOpenAssistant={() => {
-              setAssistantPrompt('What are the key differences between Sigra, Lanka, and Mahmoorganj in Varanasi?');
-              setActiveTab('assistant');
-            }}
-            onResolveCoordinates={handleResolveCoordinates}
-          />
-        )}
+          {detailsNeeded && !currentLocality && (
+            <div>
+              <PanelStatus message={detailError || (catalogueState === 'error' ? 'The geography catalogue is temporarily unavailable.'
+                : activeId || catalogueState === 'loading' ? 'Loading locality…' : 'Search for a place to open its locality profile.')} />
+              <div className="mx-auto max-w-7xl px-5 pb-8">
+                <PlaceSearch onSelect={(place) => navigate(activeTab, place.id)} />
+              </div>
+            </div>
+          )}
 
-        {activeTab === 'dashboard' && (
-          <LocalityDashboard
-            locality={currentLocality}
-            allLocalities={localities}
-            onSelectLocality={setSelectedLocalityId}
-            onOpenCompare={(ids) => handleOpenCompare(ids || [currentLocality.id, 'lanka'])}
-            onOpenAssistantWithPrompt={handleOpenAssistantWithPrompt}
-            onOpenReportModal={() => setReportModalLocality(currentLocality)}
-            onResolveCoordinates={handleResolveCoordinates}
-          />
-        )}
+          {activeTab === 'dashboard' && currentLocality && (
+            <LocalityDashboard
+              key={currentLocality.id}
+              locality={currentLocality}
+              allLocalities={chosenLocalities}
+              onSelectLocality={openLocality}
+              onOpenCompare={(ids) => openComparison(ids?.filter((id) => chosenLocalities.some((locality) => locality.geography?.id === id))
+                ?? (currentLocality.geography ? [currentLocality.id] : []))}
+              onOpenAssistantWithPrompt={openAssistant}
+              onOpenReportModal={() => setReport(currentLocality)}
+            />
+          )}
 
-        {activeTab === 'explorer' && (
-          <MapExplorerView
-            localities={localities}
-            selectedLocalityId={selectedLocalityId}
-            onSelectLocality={setSelectedLocalityId}
-          />
-        )}
+          {activeTab === 'explorer' && currentLocality && (
+            <MapExplorerView
+              key={currentLocality.id}
+              locality={currentLocality}
+              onSelectLocality={(id) => navigate('explorer', id)}
+            />
+          )}
 
-        {activeTab === 'compare' && (
-          <LocalityComparison
-            localities={localities}
-            initialSelectedIds={comparisonIds}
-            onSelectLocality={handleSelectLocality}
-            onOpenAssistantWithPrompt={handleOpenAssistantWithPrompt}
-          />
-        )}
+          {activeTab === 'compare' && (
+            <LocalityComparison
+              places={places}
+              initialSelectedIds={comparisonIds}
+              onSelectLocality={openLocality}
+              onAskCopilot={(ids) => {
+                setAssistantIds(ids);
+                setAssistantPrompt('Compare the evidence for these places and explain the main information gaps.');
+                navigate('assistant', ids[0]);
+              }}
+            />
+          )}
 
-        {activeTab === 'community' && (
-          <CommunityReportsView
-            localities={localities}
-            selectedLocalityId={selectedLocalityId}
-          />
-        )}
+          {activeTab === 'community' && currentLocality && (
+            <CommunityReportsView
+              key={currentLocality.id}
+              locality={currentLocality}
+              onSelectLocality={(id) => navigate('community', id)}
+            />
+          )}
 
-        {activeTab === 'assistant' && (
-          <AIAssistantView
-            localities={localities}
-            selectedLocality={currentLocality}
-            onSelectLocality={setSelectedLocalityId}
-            initialPrompt={assistantPrompt}
-          />
-        )}
+          {activeTab === 'assistant' && currentLocality && (
+            <AIAssistantView
+              key={`${user?.id ?? 'guest'}:${currentLocality.id}`}
+              selectedLocality={currentLocality}
+              comparisonIds={assistantIds}
+              onSelectLocality={(id) => {
+                setAssistantIds([]);
+                setAssistantPrompt('');
+                navigate('assistant', id);
+              }}
+              initialPrompt={assistantPrompt}
+            />
+          )}
 
-        {activeTab === 'admin' && (
-          <AdminDashboard
-            localities={localities}
-            onRefreshData={refreshLocalities}
-          />
-        )}
+          {activeTab === 'admin' && (user?.role === 'admin'
+            ? <AdminDashboard />
+            : <PanelStatus message="Sign in with an administrator account to open this workspace." />)}
 
-        {activeTab === 'saved' && (
-          <SavedAreasView
-            localities={localities}
-            onSelectLocality={handleSelectLocality}
-            onOpenCompare={handleOpenCompare}
-            onOpenReport={(loc) => setReportModalLocality(loc)}
-          />
-        )}
+          {activeTab === 'saved' && (
+            <SavedAreasView
+              key={user?.id ?? 'guest'}
+              onSelectLocality={openLocality}
+              onOpenCompare={openComparison}
+              onOpenReport={setReport}
+            />
+          )}
+          {activeTab === 'coverage' && <CoverageView />}
+          {activeTab === 'billing' && <BillingView key={user?.id ?? 'guest'} />}
+          {activeTab === 'professional' && <ProfessionalView key={user?.id ?? 'guest'} onOpenComparison={openComparison} />}
+          {report && <PrintableReportModal locality={report} onClose={() => setReport(null)} />}
+        </Suspense>
       </main>
-
-      {/* Footer */}
       <Footer />
-
-      {/* Downloadable / Printable PDF Evidence Brief Modal */}
-      {reportModalLocality && (
-        <PrintableReportModal
-          locality={reportModalLocality}
-          onClose={() => setReportModalLocality(null)}
-        />
-      )}
     </div>
   );
 }

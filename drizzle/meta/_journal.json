@@ -8,6 +8,48 @@
       "when": 1794389107406,
       "tag": "0000_great_hercules",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794389107407,
+      "tag": "0001_priority1_remediations",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794389107408,
+      "tag": "0002_public_geography",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794389107409,
+      "tag": "0003_account_workflows",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794389107410,
+      "tag": "0004_copilot_budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794389107411,
+      "tag": "0005_sandbox_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794389107412,
+      "tag": "0006_professional_workspaces",
+      "breakpoints": true
     }
   ]
 }

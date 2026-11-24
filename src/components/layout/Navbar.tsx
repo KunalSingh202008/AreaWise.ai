@@ -5,16 +5,19 @@ import { useLanguage } from '../../context/LanguageContext';
 import { Sun, Moon, Shield, Bookmark, Sparkles, Globe, MapPin, ChevronDown } from 'lucide-react';
 import { SupportedLanguage, Locality } from '../../types';
 
+export type Tab = 'landing' | 'dashboard' | 'explorer' | 'compare' | 'community' | 'assistant' | 'admin' | 'saved' | 'professional' | 'billing' | 'coverage';
+
 interface NavbarProps {
-  activeTab: 'landing' | 'dashboard' | 'explorer' | 'compare' | 'community' | 'assistant' | 'admin' | 'saved';
-  setActiveTab: (tab: 'landing' | 'dashboard' | 'explorer' | 'compare' | 'community' | 'assistant' | 'admin' | 'saved') => void;
-  selectedLocality: Locality;
+  activeTab: Tab;
+  setActiveTab: (tab: Tab) => void;
+  selectedLocality?: Locality;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, selectedLocality }) => {
-  const { user, switchRole, setLanguagePreference } = useAuth();
+  const { user, login, logout, setLanguagePreference } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { language, setLanguage, t } = useLanguage();
+  const [authError, setAuthError] = useState('');
   const [isLangMenuOpen, setIsLangMenuOpen] = useState(false);
 
   const handleLangChange = (lang: SupportedLanguage) => {
@@ -25,7 +28,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, selecte
 
   return (
     <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800/80 transition-colors">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-6">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2">
         {/* Zone 1: Single text element wordmark */}
         <div className="flex items-center gap-3 shrink-0">
           <button
@@ -37,20 +40,19 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, selecte
             </span>
           </button>
 
-          {/* Active Locality Pill */}
-          <button
+          {selectedLocality && <button
             onClick={() => setActiveTab('dashboard')}
             title="Current Active Locality"
             className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:border-emerald-500/50 transition-colors"
           >
             <MapPin className="w-3 h-3 text-emerald-500" />
             <span className="truncate max-w-[130px]">{selectedLocality.name}</span>
-            <span className="text-slate-400 font-mono text-[10px]">({selectedLocality.pincode})</span>
-          </button>
+            {selectedLocality.pincode && <span className="text-slate-400 font-mono text-[10px]">({selectedLocality.pincode})</span>}
+          </button>}
         </div>
 
         {/* Zone 2: 4-5 concise single-line text navigation links */}
-        <nav className="hidden md:flex items-center gap-5 text-xs font-semibold text-slate-600 dark:text-slate-300">
+        <nav className="hidden xl:flex items-center gap-5 text-xs font-semibold text-slate-600 dark:text-slate-300">
           <button
             onClick={() => setActiveTab('landing')}
             className={`whitespace-nowrap shrink-0 transition-colors py-1 ${
@@ -112,6 +114,8 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, selecte
             <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
             {t.nav.assistant}
           </button>
+          <button onClick={() => setActiveTab('professional')} className="whitespace-nowrap">Professional</button>
+          <button onClick={() => setActiveTab('billing')} className="whitespace-nowrap">Plans</button>
         </nav>
 
         {/* Zone 3: 1 primary action area with language switcher */}
@@ -184,7 +188,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, selecte
           </button>
 
           {/* Admin Mode Toggle */}
-          {user?.role === 'admin' ? (
+          {user?.role === 'admin' && (
             <button
               onClick={() => setActiveTab('admin')}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap ${
@@ -196,24 +200,40 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, selecte
               <Shield className="w-3.5 h-3.5" />
               Admin
             </button>
-          ) : (
-            <button
-              onClick={() => switchRole('admin')}
-              className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 underline whitespace-nowrap hidden sm:inline"
-            >
-              Admin
-            </button>
           )}
-
-          {/* Primary CTA */}
           <button
-            onClick={() => setActiveTab('dashboard')}
-            className="px-3.5 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors whitespace-nowrap shadow-sm"
+            onClick={async () => {
+              setAuthError('');
+              try {
+                if (user) {
+                  await logout();
+                  setActiveTab('landing');
+                } else {
+                  await login();
+                }
+              } catch {
+                setAuthError(user ? 'Sign-out failed. Try again.' : 'Google sign-in failed. Try again.');
+              }
+            }}
+            className="text-xs font-semibold whitespace-nowrap"
           >
-            {selectedLocality.name}
+            {user ? 'Sign out' : 'Sign in'}
           </button>
+          {authError && <p role="alert" className="absolute top-full right-4 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-red-600">{authError}</p>}
+
         </div>
       </div>
+      <nav aria-label="Mobile navigation" className="flex gap-4 overflow-x-auto border-t border-slate-200 px-4 py-2 text-xs dark:border-slate-800 xl:hidden">
+        {([
+          ['dashboard', t.nav.dashboard], ['explorer', t.nav.explorer], ['compare', t.nav.compare],
+          ['community', t.nav.community], ['assistant', t.nav.assistant], ['saved', 'My research'],
+          ['professional', 'Professional'], ['billing', 'Plans'],
+        ] as const).map(([tab, label]) => (
+          <button key={tab} aria-current={activeTab === tab ? 'page' : undefined}
+            className={`shrink-0 whitespace-nowrap ${activeTab === tab ? 'font-bold text-emerald-700 dark:text-emerald-400' : 'text-slate-600 dark:text-slate-300'}`}
+            onClick={() => setActiveTab(tab)}>{label}</button>
+        ))}
+      </nav>
     </header>
   );
 };
